@@ -1,6 +1,9 @@
 # iOS Memory Leak Detector - Requirements
 # No external dependencies for core functionality!
 
+# Web UI dependencies (optional - for web_app.py)
+flask>=2.0
+
 # Development dependencies (optional)
 # pytest>=7.0
 # pytest-cov>=4.0
