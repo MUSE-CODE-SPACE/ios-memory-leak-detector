@@ -24,6 +24,7 @@ app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max
 
 # Store analysis results in memory
 analysis_cache = {}
+analysis_history = []  # Store analysis history
 
 
 @app.route('/')
@@ -86,7 +87,16 @@ def analyze():
 
         # Build response
         issues_data = []
+        files_with_issues = {}  # For file tree view
+
         for issue in result.issues:
+            # Get confidence and source from context
+            confidence = None
+            source = 'regex'
+            if issue.context:
+                confidence = issue.context.get('confidence')
+                source = issue.context.get('source', 'regex')
+
             issue_dict = {
                 'type': issue.type.value,
                 'severity': issue.severity.value,
@@ -96,6 +106,8 @@ def analyze():
                 'message': issue.message,
                 'suggestion': issue.suggestion,
                 'code': issue.code_snippet,
+                'confidence': confidence,
+                'source': source,
                 'fix': None
             }
             if issue.fix:
@@ -106,6 +118,36 @@ def analyze():
                     'auto_fixable': issue.fix.is_auto_fixable
                 }
             issues_data.append(issue_dict)
+
+            # Build file tree data
+            file_path = issue.file_path
+            rel_path = os.path.relpath(file_path, project_path)
+            if file_path not in files_with_issues:
+                files_with_issues[file_path] = {
+                    'path': file_path,
+                    'rel_path': rel_path,
+                    'name': os.path.basename(file_path),
+                    'issues': 0,
+                    'critical': 0,
+                    'high': 0,
+                    'medium': 0,
+                    'low': 0
+                }
+            files_with_issues[file_path]['issues'] += 1
+            files_with_issues[file_path][issue.severity.value] += 1
+
+        # Add to history
+        history_entry = {
+            'id': cache_id,
+            'path': project_path,
+            'timestamp': datetime.now().isoformat(),
+            'total_issues': result.total_issues,
+            'fixable_issues': result.fixable_issues,
+            'severity_counts': result.severity_counts
+        }
+        analysis_history.insert(0, history_entry)
+        if len(analysis_history) > 20:  # Keep last 20
+            analysis_history.pop()
 
         return jsonify({
             'cache_id': cache_id,
@@ -119,7 +161,8 @@ def analyze():
             },
             'severity_counts': result.severity_counts,
             'type_counts': result.type_counts,
-            'issues': issues_data
+            'issues': issues_data,
+            'file_tree': list(files_with_issues.values())
         })
 
     except Exception as e:
@@ -259,6 +302,57 @@ def list_patterns():
     })
 
 
+@app.route('/history')
+def get_history():
+    """Get analysis history."""
+    return jsonify({'history': analysis_history})
+
+
+@app.route('/compare', methods=['POST'])
+def compare_analyses():
+    """Compare two analysis results."""
+    data = request.get_json()
+    id1 = data.get('id1')
+    id2 = data.get('id2')
+
+    if not id1 or not id2:
+        return jsonify({'error': 'Two analysis IDs required'}), 400
+
+    if id1 not in analysis_cache or id2 not in analysis_cache:
+        return jsonify({'error': 'Analysis not found in cache'}), 400
+
+    result1 = analysis_cache[id1]['result']
+    result2 = analysis_cache[id2]['result']
+
+    # Compare issues
+    issues1_keys = set((i.file_path, i.line_number, i.type.value) for i in result1.issues)
+    issues2_keys = set((i.file_path, i.line_number, i.type.value) for i in result2.issues)
+
+    new_issues = len(issues2_keys - issues1_keys)
+    fixed_issues = len(issues1_keys - issues2_keys)
+    unchanged = len(issues1_keys & issues2_keys)
+
+    return jsonify({
+        'comparison': {
+            'before': {
+                'id': id1,
+                'total_issues': result1.total_issues,
+                'severity_counts': result1.severity_counts
+            },
+            'after': {
+                'id': id2,
+                'total_issues': result2.total_issues,
+                'severity_counts': result2.severity_counts
+            },
+            'changes': {
+                'new_issues': new_issues,
+                'fixed_issues': fixed_issues,
+                'unchanged': unchanged
+            }
+        }
+    })
+
+
 # Create templates directory and HTML template
 TEMPLATE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates')
 os.makedirs(TEMPLATE_DIR, exist_ok=True)
@@ -284,6 +378,16 @@ INDEX_HTML = '''<!DOCTYPE html>
             --card-bg: #ffffff;
             --text: #2d3748;
             --border: #e2e8f0;
+            --code-bg: #f1f5f9;
+        }
+
+        /* Dark mode */
+        .dark-mode {
+            --bg: #1a202c;
+            --card-bg: #2d3748;
+            --text: #e2e8f0;
+            --border: #4a5568;
+            --code-bg: #1e293b;
         }
 
         body {
@@ -291,6 +395,7 @@ INDEX_HTML = '''<!DOCTYPE html>
             background: var(--bg);
             color: var(--text);
             line-height: 1.6;
+            transition: background 0.3s, color 0.3s;
         }
 
         .header {
@@ -298,10 +403,25 @@ INDEX_HTML = '''<!DOCTYPE html>
             color: white;
             padding: 30px 20px;
             text-align: center;
+            position: relative;
         }
 
         .header h1 { font-size: 2em; margin-bottom: 10px; }
         .header p { opacity: 0.9; }
+
+        .dark-toggle {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: white;
+            padding: 8px 12px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .dark-toggle:hover { background: rgba(255,255,255,0.3); }
 
         .container {
             max-width: 1400px;
@@ -462,6 +582,75 @@ INDEX_HTML = '''<!DOCTYPE html>
         .issue-badge.low { background: var(--success); color: white; }
         .issue-badge.info { background: var(--gray); color: white; }
 
+        /* Confidence badge */
+        .confidence-badge {
+            font-size: 0.7em;
+            padding: 2px 8px;
+            border-radius: 10px;
+            margin-left: 8px;
+            background: var(--info);
+            color: white;
+        }
+        .confidence-badge.high { background: var(--success); }
+        .confidence-badge.medium { background: var(--warning); }
+        .confidence-badge.low { background: var(--gray); }
+
+        /* File tree panel */
+        .layout-grid {
+            display: grid;
+            grid-template-columns: 280px 1fr;
+            gap: 20px;
+        }
+        @media (max-width: 900px) {
+            .layout-grid { grid-template-columns: 1fr; }
+        }
+
+        .file-tree {
+            position: sticky;
+            top: 20px;
+            max-height: calc(100vh - 200px);
+            overflow-y: auto;
+        }
+
+        .file-item {
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: background 0.2s;
+        }
+        .file-item:hover { background: var(--bg); }
+        .file-item.active { background: var(--primary); color: white; }
+
+        .file-name {
+            font-size: 0.9em;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            flex: 1;
+        }
+
+        .file-count {
+            font-size: 0.75em;
+            padding: 2px 8px;
+            border-radius: 10px;
+            background: var(--danger);
+            color: white;
+        }
+
+        /* History panel */
+        .history-item {
+            padding: 12px;
+            border-bottom: 1px solid var(--border);
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .history-item:hover { background: var(--bg); }
+        .history-time { font-size: 0.8em; color: var(--gray); }
+        .history-path { font-weight: 500; }
+
         .issue-location {
             font-family: monospace;
             font-size: 0.85em;
@@ -607,9 +796,10 @@ INDEX_HTML = '''<!DOCTYPE html>
 </head>
 <body>
     <div class="header">
-        <h1>🔍 iOS Memory Leak Detector</h1>
+        <button class="dark-toggle" onclick="toggleDarkMode()">🌙 Dark</button>
+        <h1>iOS Memory Leak Detector</h1>
         <p>Detect memory leaks in Swift, SwiftUI & Objective-C projects</p>
-        <p style="font-size: 0.85em; margin-top: 5px;">v{{ version }}</p>
+        <p style="font-size: 0.85em; margin-top: 5px;">v{{ version }} - AST Enhanced</p>
     </div>
 
     <div class="container">
@@ -834,9 +1024,20 @@ INDEX_HTML = '''<!DOCTYPE html>
                     `;
                 }
 
+                // Confidence badge
+                let confidenceBadge = '';
+                if (issue.confidence !== null && issue.confidence !== undefined) {
+                    const confPercent = Math.round(issue.confidence * 100);
+                    const confClass = confPercent >= 90 ? 'high' : (confPercent >= 70 ? 'medium' : 'low');
+                    confidenceBadge = `<span class="confidence-badge ${confClass}">${confPercent}% ${issue.source || ''}</span>`;
+                }
+
                 div.innerHTML = `
                     <div class="issue-header">
-                        <span class="issue-badge ${issue.severity}">${issue.severity}</span>
+                        <span>
+                            <span class="issue-badge ${issue.severity}">${issue.severity}</span>
+                            ${confidenceBadge}
+                        </span>
                         <span class="issue-location">${shortFile}:${issue.line}${issue.column > 1 ? ':' + issue.column : ''}</span>
                     </div>
                     <div class="issue-message">${escapeHtml(issue.message)}</div>
@@ -943,6 +1144,25 @@ INDEX_HTML = '''<!DOCTYPE html>
                        .replace(/</g, '&lt;')
                        .replace(/>/g, '&gt;')
                        .replace(/"/g, '&quot;');
+        }
+
+        // Dark mode toggle
+        function toggleDarkMode() {
+            document.body.classList.toggle('dark-mode');
+            const btn = document.querySelector('.dark-toggle');
+            if (document.body.classList.contains('dark-mode')) {
+                btn.textContent = '☀️ Light';
+                localStorage.setItem('darkMode', 'true');
+            } else {
+                btn.textContent = '🌙 Dark';
+                localStorage.setItem('darkMode', 'false');
+            }
+        }
+
+        // Load dark mode preference
+        if (localStorage.getItem('darkMode') === 'true') {
+            document.body.classList.add('dark-mode');
+            document.querySelector('.dark-toggle').textContent = '☀️ Light';
         }
 
         // Enter key to analyze
