@@ -1,5 +1,6 @@
 """
 Report Generator for Memory Leak Analysis Results
+Enhanced with fix suggestions and diff display
 """
 
 import json
@@ -13,7 +14,7 @@ from .patterns import LeakPattern, LeakSeverity, LeakType
 
 
 class Reporter:
-    """Generate reports from analysis results."""
+    """Generate reports from analysis results with fix suggestions."""
 
     SEVERITY_COLORS = {
         "critical": "\033[91m",  # Red
@@ -24,6 +25,10 @@ class Reporter:
     }
     RESET = "\033[0m"
     BOLD = "\033[1m"
+    DIM = "\033[2m"
+    GREEN = "\033[92m"
+    RED = "\033[91m"
+    CYAN = "\033[96m"
 
     SEVERITY_ICONS = {
         "critical": "🔴",
@@ -54,20 +59,20 @@ class Reporter:
         self.result = result
         self.project_name = project_name
 
-    def print_console(self, verbose: bool = False, no_color: bool = False):
+    def print_console(self, verbose: bool = False, no_color: bool = False, show_fixes: bool = True):
         """Print report to console."""
         if no_color:
-            self._print_console_plain(verbose)
+            self._print_console_plain(verbose, show_fixes)
         else:
-            self._print_console_colored(verbose)
+            self._print_console_colored(verbose, show_fixes)
 
-    def _print_console_colored(self, verbose: bool):
-        """Print colored console output."""
+    def _print_console_colored(self, verbose: bool, show_fixes: bool = True):
+        """Print colored console output with fix suggestions."""
         print()
-        print(f"{self.BOLD}{'='*60}{self.RESET}")
+        print(f"{self.BOLD}{'='*70}{self.RESET}")
         print(f"{self.BOLD}  iOS Memory Leak Analysis Report{self.RESET}")
         print(f"{self.BOLD}  Project: {self.project_name}{self.RESET}")
-        print(f"{self.BOLD}{'='*60}{self.RESET}")
+        print(f"{self.BOLD}{'='*70}{self.RESET}")
         print()
 
         # Summary
@@ -77,6 +82,7 @@ class Reporter:
         print(f"    Objective-C: {self.result.objc_files}")
         print(f"    Headers: {self.result.header_files}")
         print(f"  Total issues: {self.result.total_issues}")
+        print(f"  {self.GREEN}Auto-fixable: {self.result.fixable_issues}{self.RESET}")
         print(f"  Analysis time: {self.result.analysis_time:.2f}s")
         print()
 
@@ -99,7 +105,10 @@ class Reporter:
                 reverse=True
             )
             for typ, count in sorted_types[:10]:  # Top 10
-                icon = self.TYPE_ICONS.get(LeakType(typ), "•")
+                try:
+                    icon = self.TYPE_ICONS.get(LeakType(typ), "•")
+                except ValueError:
+                    icon = "•"
                 display_name = typ.replace('_', ' ').title()
                 print(f"  {icon} {display_name}: {count}")
             print()
@@ -107,7 +116,7 @@ class Reporter:
         # Detailed issues
         if self.result.issues:
             print(f"{self.BOLD}🔍 Detailed Issues{self.RESET}")
-            print("-" * 60)
+            print("-" * 70)
 
             current_file = None
             for issue in self.result.issues:
@@ -121,18 +130,31 @@ class Reporter:
                 icon = self.SEVERITY_ICONS.get(issue.severity.value, "")
                 type_icon = self.TYPE_ICONS.get(issue.type, "•")
 
+                # Location info
+                location_str = f"Line {issue.line_number}"
+                if issue.column > 1:
+                    location_str += f":{issue.column}"
+
                 print(f"\n  {icon} {color}[{issue.severity.value.upper()}]{self.RESET} "
-                      f"Line {issue.line_number}")
+                      f"{location_str}")
                 print(f"  {type_icon} {issue.message}")
                 print(f"  💡 {issue.suggestion}")
 
+                # Show code snippet
                 if verbose and issue.code_snippet:
-                    print(f"\n  Code:")
+                    print(f"\n  {self.DIM}Code:{self.RESET}")
                     for line in issue.code_snippet.split('\n'):
-                        print(f"    {line}")
+                        if line.startswith('>>>'):
+                            print(f"  {self.RED}{line}{self.RESET}")
+                        else:
+                            print(f"  {self.DIM}{line}{self.RESET}")
+
+                # Show fix suggestion
+                if show_fixes and issue.fix:
+                    self._print_fix_suggestion(issue.fix, verbose)
 
         print()
-        print(f"{self.BOLD}{'='*60}{self.RESET}")
+        print(f"{self.BOLD}{'='*70}{self.RESET}")
 
         # Final verdict
         critical = self.result.severity_counts.get('critical', 0)
@@ -149,39 +171,76 @@ class Reporter:
                   f"Some improvements suggested.{self.RESET}")
         else:
             print(f"{self.SEVERITY_COLORS['low']}✅ No memory leak issues detected!{self.RESET}")
+
+        if self.result.fixable_issues > 0:
+            print(f"\n{self.GREEN}💡 {self.result.fixable_issues} issues can be auto-fixed. "
+                  f"Run with --fix to apply.{self.RESET}")
         print()
 
-    def _print_console_plain(self, verbose: bool):
+    def _print_fix_suggestion(self, fix, verbose: bool = False):
+        """Print a fix suggestion."""
+        if not fix.fixed_code:
+            return
+
+        fixable = "✓ Auto-fixable" if fix.is_auto_fixable else "Manual fix required"
+        print(f"\n  {self.CYAN}🔧 Fix ({fixable}):{self.RESET}")
+
+        if verbose or len(fix.original_code.split('\n')) <= 3:
+            # Show full before/after
+            print(f"  {self.DIM}Before:{self.RESET}")
+            for line in fix.original_code.split('\n')[:5]:
+                print(f"    {self.RED}- {line}{self.RESET}")
+
+            print(f"  {self.DIM}After:{self.RESET}")
+            for line in fix.fixed_code.split('\n')[:5]:
+                print(f"    {self.GREEN}+ {line}{self.RESET}")
+        else:
+            # Show compact version
+            print(f"    {fix.description}")
+
+    def _print_console_plain(self, verbose: bool, show_fixes: bool = True):
         """Print plain text console output (no colors)."""
         print()
-        print("=" * 60)
+        print("=" * 70)
         print("  iOS Memory Leak Analysis Report")
         print(f"  Project: {self.project_name}")
-        print("=" * 60)
+        print("=" * 70)
         print()
 
         print("Summary:")
         print(f"  Files analyzed: {self.result.total_files}")
         print(f"  Total issues: {self.result.total_issues}")
+        print(f"  Auto-fixable: {self.result.fixable_issues}")
         print()
 
         for issue in self.result.issues:
-            print(f"[{issue.severity.value.upper()}] {issue.file_path}:{issue.line_number}")
+            location = f"{issue.file_path}:{issue.line_number}"
+            if issue.column > 1:
+                location += f":{issue.column}"
+
+            print(f"[{issue.severity.value.upper()}] {location}")
             print(f"  {issue.message}")
             print(f"  Suggestion: {issue.suggestion}")
+
             if verbose and issue.code_snippet:
                 print(f"  Code:\n{issue.code_snippet}")
+
+            if show_fixes and issue.fix:
+                fixable = "Auto-fixable" if issue.fix.is_auto_fixable else "Manual"
+                print(f"  Fix ({fixable}):")
+                print(f"    Before: {issue.fix.original_code[:50]}...")
+                print(f"    After:  {issue.fix.fixed_code[:50]}...")
             print()
 
     def to_json(self, output_path: Optional[str] = None) -> str:
-        """Generate JSON report."""
+        """Generate JSON report with fix suggestions."""
         report = {
             "project": self.project_name,
             "generated_at": datetime.now().isoformat(),
             "analysis": self.result.to_dict()
         }
 
-        json_str = json.dumps(report, indent=2)
+        json_str = json.dumps(report, indent=2, default=str)
 
         if output_path:
             with open(output_path, 'w', encoding='utf-8') as f:
@@ -191,7 +250,7 @@ class Reporter:
         return json_str
 
     def to_html(self, output_path: str) -> str:
-        """Generate HTML report."""
+        """Generate HTML report with fix suggestions."""
         html = self._generate_html()
 
         with open(output_path, 'w', encoding='utf-8') as f:
@@ -201,7 +260,7 @@ class Reporter:
         return html
 
     def to_markdown(self, output_path: Optional[str] = None) -> str:
-        """Generate Markdown report."""
+        """Generate Markdown report with fix suggestions."""
         md = self._generate_markdown()
 
         if output_path:
@@ -212,7 +271,7 @@ class Reporter:
         return md
 
     def _generate_html(self) -> str:
-        """Generate HTML report content."""
+        """Generate HTML report content with fix suggestions."""
         severity_colors = {
             "critical": "#dc3545",
             "high": "#fd7e14",
@@ -233,15 +292,40 @@ class Reporter:
                 issues_html += f'<div class="file-group"><h3>📄 {relative_path}</h3>'
 
             color = severity_colors.get(issue.severity.value, "#6c757d")
+            fix_html = ""
+
+            if issue.fix:
+                fixable_badge = '<span class="badge auto-fix">Auto-fixable</span>' if issue.fix.is_auto_fixable else '<span class="badge manual">Manual</span>'
+                fix_html = f'''
+                <div class="fix-suggestion">
+                    <div class="fix-header">🔧 Suggested Fix {fixable_badge}</div>
+                    <div class="fix-content">
+                        <div class="before">
+                            <strong>Before:</strong>
+                            <pre>{issue.fix.original_code}</pre>
+                        </div>
+                        <div class="after">
+                            <strong>After:</strong>
+                            <pre>{issue.fix.fixed_code}</pre>
+                        </div>
+                    </div>
+                </div>
+                '''
+
+            location = f"Line {issue.line_number}"
+            if issue.column > 1:
+                location += f":{issue.column}"
+
             issues_html += f'''
             <div class="issue" style="border-left: 4px solid {color};">
                 <div class="issue-header">
                     <span class="severity" style="background: {color};">{issue.severity.value.upper()}</span>
-                    <span class="line">Line {issue.line_number}</span>
+                    <span class="location">{location}</span>
                 </div>
                 <p class="message">{issue.message}</p>
                 <p class="suggestion">💡 {issue.suggestion}</p>
                 <pre class="code">{issue.code_snippet}</pre>
+                {fix_html}
             </div>
             '''
 
@@ -274,7 +358,7 @@ class Reporter:
         }}
         .summary {{
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
             gap: 20px;
             margin-bottom: 30px;
         }}
@@ -287,17 +371,7 @@ class Reporter:
         }}
         .stat-card h3 {{ margin: 0; font-size: 2em; }}
         .stat-card p {{ margin: 5px 0 0; color: #666; }}
-        .severity-chart {{
-            display: flex;
-            gap: 10px;
-            margin-bottom: 30px;
-        }}
-        .severity-bar {{
-            padding: 10px 20px;
-            border-radius: 5px;
-            color: white;
-            font-weight: bold;
-        }}
+        .stat-card.fixable {{ border-top: 4px solid #28a745; }}
         .file-group {{
             background: white;
             border-radius: 10px;
@@ -315,6 +389,7 @@ class Reporter:
             display: flex;
             gap: 10px;
             margin-bottom: 10px;
+            align-items: center;
         }}
         .severity {{
             padding: 2px 8px;
@@ -323,7 +398,7 @@ class Reporter:
             font-size: 0.8em;
             font-weight: bold;
         }}
-        .line {{ color: #666; }}
+        .location {{ color: #666; font-family: monospace; }}
         .message {{ font-weight: 500; margin: 10px 0; }}
         .suggestion {{ color: #28a745; margin: 10px 0; }}
         .code {{
@@ -333,6 +408,50 @@ class Reporter:
             border-radius: 5px;
             overflow-x: auto;
             font-size: 0.9em;
+            white-space: pre-wrap;
+        }}
+        .fix-suggestion {{
+            background: #e8f5e9;
+            border: 1px solid #4caf50;
+            border-radius: 5px;
+            padding: 15px;
+            margin-top: 15px;
+        }}
+        .fix-header {{
+            font-weight: bold;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }}
+        .badge {{
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 0.8em;
+        }}
+        .badge.auto-fix {{
+            background: #4caf50;
+            color: white;
+        }}
+        .badge.manual {{
+            background: #ff9800;
+            color: white;
+        }}
+        .fix-content {{
+            display: grid;
+            gap: 10px;
+        }}
+        .before pre {{
+            background: #ffebee;
+            color: #c62828;
+            padding: 10px;
+            border-radius: 4px;
+        }}
+        .after pre {{
+            background: #e8f5e9;
+            color: #2e7d32;
+            padding: 10px;
+            border-radius: 4px;
         }}
     </style>
 </head>
@@ -352,6 +471,10 @@ class Reporter:
             <h3>{self.result.total_issues}</h3>
             <p>Issues Found</p>
         </div>
+        <div class="stat-card fixable">
+            <h3>{self.result.fixable_issues}</h3>
+            <p>Auto-fixable</p>
+        </div>
         <div class="stat-card">
             <h3>{self.result.severity_counts.get('critical', 0) + self.result.severity_counts.get('high', 0)}</h3>
             <p>Critical/High</p>
@@ -359,22 +482,6 @@ class Reporter:
         <div class="stat-card">
             <h3>{self.result.analysis_time:.1f}s</h3>
             <p>Analysis Time</p>
-        </div>
-    </div>
-
-    <h2>📊 Severity Distribution</h2>
-    <div class="severity-chart">
-        <div class="severity-bar" style="background: #dc3545;">
-            Critical: {self.result.severity_counts.get('critical', 0)}
-        </div>
-        <div class="severity-bar" style="background: #fd7e14;">
-            High: {self.result.severity_counts.get('high', 0)}
-        </div>
-        <div class="severity-bar" style="background: #ffc107; color: #333;">
-            Medium: {self.result.severity_counts.get('medium', 0)}
-        </div>
-        <div class="severity-bar" style="background: #28a745;">
-            Low: {self.result.severity_counts.get('low', 0)}
         </div>
     </div>
 
@@ -387,7 +494,7 @@ class Reporter:
         return html
 
     def _generate_markdown(self) -> str:
-        """Generate Markdown report content."""
+        """Generate Markdown report content with fix suggestions."""
         md = f'''# iOS Memory Leak Analysis Report
 
 **Project:** {self.project_name}
@@ -403,6 +510,7 @@ class Reporter:
 | Swift Files | {self.result.swift_files} |
 | Objective-C Files | {self.result.objc_files} |
 | Total Issues | {self.result.total_issues} |
+| Auto-fixable | {self.result.fixable_issues} |
 | Analysis Time | {self.result.analysis_time:.2f}s |
 
 ## 📈 Issues by Severity
@@ -427,19 +535,39 @@ class Reporter:
                 md += f'\n### 📄 {relative_path}\n\n'
 
             icon = self.SEVERITY_ICONS.get(issue.severity.value, "•")
+            location = f"Line {issue.line_number}"
+            if issue.column > 1:
+                location += f":{issue.column}"
+
             md += f'''
-#### {icon} [{issue.severity.value.upper()}] Line {issue.line_number}
+#### {icon} [{issue.severity.value.upper()}] {location}
 
 **Issue:** {issue.message}
 
 **Suggestion:** {issue.suggestion}
 
-```swift
+```
 {issue.code_snippet}
 ```
-
----
 '''
+
+            if issue.fix:
+                fixable = "✅ Auto-fixable" if issue.fix.is_auto_fixable else "⚠️ Manual fix"
+                md += f'''
+**🔧 Fix ({fixable}):**
+
+Before:
+```
+{issue.fix.original_code}
+```
+
+After:
+```
+{issue.fix.fixed_code}
+```
+'''
+
+            md += '\n---\n'
 
         return md
 

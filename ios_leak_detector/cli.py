@@ -1,5 +1,6 @@
 """
 Command Line Interface for iOS Memory Leak Detector
+Enhanced with --fix, --diff, and advanced options
 """
 
 import argparse
@@ -9,6 +10,7 @@ from pathlib import Path
 
 from .analyzer import MemoryLeakAnalyzer
 from .reporter import Reporter
+from .fixer import CodeFixer, apply_all_fixes
 from . import __version__
 
 
@@ -20,10 +22,23 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='''
 Examples:
+  # Basic analysis
   ios-leak-detector /path/to/ios/project
+
+  # Verbose with code snippets and fixes
+  ios-leak-detector . --verbose
+
+  # Show diff of suggested fixes
+  ios-leak-detector src/ --diff
+
+  # Apply auto-fixes (creates backups)
+  ios-leak-detector src/ --fix
+
+  # Generate HTML report
   ios-leak-detector . --format html --output report.html
-  ios-leak-detector src/ --severity high --verbose
-  ios-leak-detector MyApp.xcodeproj --exclude Pods --json
+
+  # Only high severity issues
+  ios-leak-detector MyApp.xcodeproj --severity high
 
 Supported file types:
   - Swift (.swift)
@@ -37,6 +52,11 @@ Detection includes:
   - Unremoved timers/observers
   - Main thread performance issues
   - SwiftUI-specific patterns
+
+Fix modes:
+  --fix       Apply auto-fixable changes (with backup)
+  --diff      Show diff of proposed changes (dry-run)
+  --fix-all   Apply all fixes including manual ones (interactive)
         '''
     )
 
@@ -45,69 +65,95 @@ Detection includes:
         help='Path to iOS project directory or file to analyze'
     )
 
-    parser.add_argument(
+    # Output options
+    output_group = parser.add_argument_group('Output options')
+    output_group.add_argument(
         '-o', '--output',
         help='Output file path for report'
     )
-
-    parser.add_argument(
+    output_group.add_argument(
         '-f', '--format',
         choices=['console', 'json', 'html', 'markdown'],
         default='console',
         help='Output format (default: console)'
     )
-
-    parser.add_argument(
-        '-s', '--severity',
-        choices=['critical', 'high', 'medium', 'low', 'info'],
-        default='info',
-        help='Minimum severity level to report (default: info)'
-    )
-
-    parser.add_argument(
-        '--exclude',
-        nargs='+',
-        default=[],
-        help='Directories to exclude (e.g., --exclude Pods Carthage)'
-    )
-
-    parser.add_argument(
-        '--no-swiftui',
-        action='store_true',
-        help='Disable SwiftUI-specific pattern detection'
-    )
-
-    parser.add_argument(
-        '-v', '--verbose',
-        action='store_true',
-        help='Show detailed output including code snippets'
-    )
-
-    parser.add_argument(
-        '--no-color',
-        action='store_true',
-        help='Disable colored output'
-    )
-
-    parser.add_argument(
+    output_group.add_argument(
         '-j', '--json',
         action='store_true',
         help='Output as JSON (shortcut for --format json)'
     )
 
-    parser.add_argument(
+    # Fix options
+    fix_group = parser.add_argument_group('Fix options')
+    fix_group.add_argument(
+        '--fix',
+        action='store_true',
+        help='Apply auto-fixable changes to files (creates backups)'
+    )
+    fix_group.add_argument(
+        '--diff',
+        action='store_true',
+        help='Show diff of proposed fixes without applying them'
+    )
+    fix_group.add_argument(
+        '--no-backup',
+        action='store_true',
+        help='Skip backup creation when using --fix'
+    )
+
+    # Filter options
+    filter_group = parser.add_argument_group('Filter options')
+    filter_group.add_argument(
+        '-s', '--severity',
+        choices=['critical', 'high', 'medium', 'low', 'info'],
+        default='info',
+        help='Minimum severity level to report (default: info)'
+    )
+    filter_group.add_argument(
+        '--exclude',
+        nargs='+',
+        default=[],
+        help='Directories to exclude (e.g., --exclude Pods Carthage)'
+    )
+    filter_group.add_argument(
+        '--no-swiftui',
+        action='store_true',
+        help='Disable SwiftUI-specific pattern detection'
+    )
+
+    # Display options
+    display_group = parser.add_argument_group('Display options')
+    display_group.add_argument(
+        '-v', '--verbose',
+        action='store_true',
+        help='Show detailed output including code snippets and fixes'
+    )
+    display_group.add_argument(
+        '--no-color',
+        action='store_true',
+        help='Disable colored output'
+    )
+    display_group.add_argument(
+        '--no-fixes',
+        action='store_true',
+        help='Hide fix suggestions in output'
+    )
+
+    # Performance options
+    perf_group = parser.add_argument_group('Performance options')
+    perf_group.add_argument(
         '--workers',
         type=int,
         default=4,
         help='Number of parallel workers (default: 4)'
     )
 
+    # Info options
     parser.add_argument(
         '--version',
         action='version',
         version=f'ios-leak-detector {__version__}'
     )
-
     parser.add_argument(
         '--list-patterns',
         action='store_true',
@@ -163,6 +209,7 @@ Detection includes:
             result.objc_files = 1 if target_path.suffix in ('.m', '.mm') else 0
             result.issues = issues
             result.total_issues = len(issues)
+            result.fixable_issues = sum(1 for i in issues if i.fix and i.fix.is_auto_fixable)
             for issue in issues:
                 sev = issue.severity.value
                 typ = issue.type.value
@@ -171,17 +218,29 @@ Detection includes:
         else:
             result = analyzer.analyze_directory(str(target_path))
 
+        # Handle diff mode
+        if args.diff:
+            _show_diff(result, args.no_color)
+            return 0
+
+        # Handle fix mode
+        if args.fix:
+            return _apply_fixes(result, args.no_backup, args.verbose)
+
         # Generate report
         reporter = Reporter(result, project_name)
-
         output_format = 'json' if args.json else args.format
 
         if output_format == 'console':
-            reporter.print_console(verbose=args.verbose, no_color=args.no_color)
+            reporter.print_console(
+                verbose=args.verbose,
+                no_color=args.no_color,
+                show_fixes=not args.no_fixes
+            )
 
         elif output_format == 'json':
             output_path = args.output or f"{project_name}_leak_report.json"
-            json_str = reporter.to_json(output_path)
+            json_str = reporter.to_json(output_path if args.output else None)
             if not args.output:
                 print(json_str)
 
@@ -191,7 +250,7 @@ Detection includes:
 
         elif output_format == 'markdown':
             output_path = args.output or f"{project_name}_leak_report.md"
-            md_str = reporter.to_markdown(output_path)
+            md_str = reporter.to_markdown(output_path if args.output else None)
             if not args.output:
                 print(md_str)
 
@@ -213,6 +272,102 @@ Detection includes:
         return 1
 
 
+def _show_diff(result, no_color: bool = False):
+    """Show diff of proposed fixes."""
+    from .fixer import CodeFixer
+
+    fixer = CodeFixer(dry_run=True, backup=False)
+
+    # Group issues by file
+    issues_by_file = result.get_issues_by_file()
+
+    total_fixes = 0
+
+    print("\n📋 Proposed Fixes (Dry Run)\n")
+    print("=" * 70)
+
+    for file_path, issues in issues_by_file.items():
+        file_fix = fixer.fix_file(file_path, issues)
+
+        if file_fix.has_changes():
+            # Get relative path
+            parts = Path(file_path).parts
+            rel_path = '/'.join(parts[-3:]) if len(parts) > 3 else file_path
+
+            print(f"\n📄 {rel_path}")
+            print(f"   Fixes: {len(file_fix.fixes)}")
+            print("-" * 50)
+
+            diff = fixer.generate_diff_output([file_fix], colored=not no_color)
+            print(diff)
+
+            total_fixes += len(file_fix.fixes)
+
+    if total_fixes == 0:
+        print("\n✅ No auto-fixable issues found.")
+    else:
+        print(f"\n📊 Total: {total_fixes} fixes available")
+        print("💡 Run with --fix to apply these changes")
+
+
+def _apply_fixes(result, no_backup: bool, verbose: bool):
+    """Apply auto-fixes to files."""
+    from .fixer import CodeFixer
+
+    fixable = result.get_fixable_issues()
+
+    if not fixable:
+        print("✅ No auto-fixable issues found.")
+        return 0
+
+    print(f"🔧 Found {len(fixable)} auto-fixable issues")
+
+    if not no_backup:
+        print("📦 Creating backups before applying fixes...")
+
+    fixer = CodeFixer(dry_run=False, backup=not no_backup)
+
+    # Group issues by file
+    issues_by_file = result.get_issues_by_file()
+
+    file_fixes = []
+    for file_path, issues in issues_by_file.items():
+        file_fix = fixer.fix_file(file_path, issues)
+        if file_fix.has_changes():
+            file_fixes.append(file_fix)
+
+    if not file_fixes:
+        print("✅ No changes to apply.")
+        return 0
+
+    # Apply fixes
+    summary = fixer.apply_fixes(file_fixes)
+
+    print()
+    print("=" * 50)
+    print(f"✅ Applied {summary['fixes_applied']} fixes to {summary['files_modified']} files")
+
+    if summary['backups_created']:
+        print(f"\n📦 Backups created in:")
+        for backup in summary['backups_created'][:5]:
+            print(f"   {backup}")
+        if len(summary['backups_created']) > 5:
+            print(f"   ... and {len(summary['backups_created']) - 5} more")
+
+    if summary['errors']:
+        print(f"\n⚠️  Errors occurred:")
+        for error in summary['errors']:
+            print(f"   {error['file']}: {error['error']}")
+        return 1
+
+    if verbose:
+        print("\n📋 Fix Report:")
+        report = fixer.generate_fix_report(file_fixes)
+        print(report)
+
+    return 0
+
+
 def _list_patterns():
     """Print all available detection patterns."""
     from .patterns import (
@@ -228,6 +383,8 @@ def _list_patterns():
         print(f"  • {name}")
         print(f"    Severity: {data['severity'].value}")
         print(f"    {data['message']}")
+        if 'fix_example' in data:
+            print(f"    Auto-fix: Available")
         print()
 
     print("\n🎨 SwiftUI Patterns:")
@@ -244,6 +401,8 @@ def _list_patterns():
         print(f"  • {name}")
         print(f"    Severity: {data['severity'].value}")
         print(f"    {data['message']}")
+        if 'fix_example' in data:
+            print(f"    Auto-fix: Available")
         print()
 
     print("\n⚡ Performance Patterns:")

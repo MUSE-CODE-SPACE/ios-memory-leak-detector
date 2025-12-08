@@ -1,5 +1,6 @@
 """
 Memory Leak Analyzer - Main Analysis Engine
+Enhanced with fix generation support
 """
 
 import os
@@ -9,7 +10,7 @@ from typing import List, Dict, Optional, Set, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 
-from .patterns import LeakPattern, LeakSeverity, LeakType, get_all_patterns, SWIFTUI_PATTERNS
+from .patterns import LeakPattern, LeakSeverity, LeakType, FixSuggestion, get_all_patterns, SWIFTUI_PATTERNS
 from .swift_parser import SwiftParser
 from .objc_parser import ObjCParser
 
@@ -22,6 +23,7 @@ class AnalysisResult:
     objc_files: int = 0
     header_files: int = 0
     total_issues: int = 0
+    fixable_issues: int = 0
     issues: List[LeakPattern] = field(default_factory=list)
     file_summaries: List[Dict] = field(default_factory=list)
     severity_counts: Dict[str, int] = field(default_factory=dict)
@@ -36,6 +38,7 @@ class AnalysisResult:
                 "objc_files": self.objc_files,
                 "header_files": self.header_files,
                 "total_issues": self.total_issues,
+                "fixable_issues": self.fixable_issues,
                 "analysis_time_seconds": round(self.analysis_time, 2)
             },
             "by_severity": self.severity_counts,
@@ -43,6 +46,22 @@ class AnalysisResult:
             "issues": [issue.to_dict() for issue in self.issues],
             "file_summaries": self.file_summaries
         }
+
+    def get_issues_by_file(self) -> Dict[str, List[LeakPattern]]:
+        """Group issues by file path."""
+        by_file: Dict[str, List[LeakPattern]] = {}
+        for issue in self.issues:
+            if issue.file_path not in by_file:
+                by_file[issue.file_path] = []
+            by_file[issue.file_path].append(issue)
+        return by_file
+
+    def get_fixable_issues(self) -> List[LeakPattern]:
+        """Get only issues that can be auto-fixed."""
+        return [
+            issue for issue in self.issues
+            if issue.fix and issue.fix.is_auto_fixable
+        ]
 
 
 class MemoryLeakAnalyzer:
@@ -63,6 +82,7 @@ class MemoryLeakAnalyzer:
                 - severity_threshold: Minimum severity to report
                 - include_swiftui: Whether to check SwiftUI patterns
                 - max_workers: Number of parallel workers
+                - generate_fixes: Whether to generate fix suggestions
         """
         self.config = config or {}
         self.exclude_dirs = set(self.config.get('exclude_dirs', [
@@ -77,6 +97,7 @@ class MemoryLeakAnalyzer:
         )
         self.include_swiftui = self.config.get('include_swiftui', True)
         self.max_workers = self.config.get('max_workers', 4)
+        self.generate_fixes = self.config.get('generate_fixes', True)
 
         self.swift_parser = SwiftParser()
         self.objc_parser = ObjCParser()
@@ -152,6 +173,12 @@ class MemoryLeakAnalyzer:
 
         result.issues = sorted_issues
         result.total_issues = len(sorted_issues)
+
+        # Count fixable issues
+        result.fixable_issues = sum(
+            1 for issue in sorted_issues
+            if issue.fix and issue.fix.is_auto_fixable
+        )
 
         # Calculate counts
         for issue in sorted_issues:
@@ -245,25 +272,60 @@ class MemoryLeakAnalyzer:
         if 'import SwiftUI' not in content:
             return []
 
+        # Calculate line offsets for precise location
+        line_offsets = [0]
+        offset = 0
+        for line in lines:
+            offset += len(line) + 1
+            line_offsets.append(offset)
+
+        def get_location(pos: int) -> Tuple[int, int]:
+            for i, line_offset in enumerate(line_offsets):
+                if i + 1 < len(line_offsets) and pos < line_offsets[i + 1]:
+                    return (i + 1, pos - line_offset + 1)
+            return (len(lines), 1)
+
         for name, pattern_data in SWIFTUI_PATTERNS.items():
             try:
                 regex = re.compile(pattern_data["pattern"], re.MULTILINE | re.DOTALL)
                 for match in regex.finditer(content):
-                    line_num = content[:match.start()].count('\n') + 1
+                    line_num, column = get_location(match.start())
+                    end_line, end_col = get_location(match.end())
 
                     # Get code snippet
                     start = max(0, line_num - 3)
                     end = min(len(lines), line_num + 2)
-                    snippet = '\n'.join(f"{i+start+1}: {lines[i]}" for i in range(start, end))
+                    snippet_lines = []
+                    for i in range(start, end):
+                        prefix = ">>>" if i + 1 == line_num else "   "
+                        snippet_lines.append(f"{prefix} {i+1:4d} | {lines[i]}")
+                    snippet = '\n'.join(snippet_lines)
+
+                    # Generate fix suggestion
+                    fix_example = pattern_data.get('fix_example')
+                    fix = None
+                    if fix_example:
+                        fix = FixSuggestion(
+                            original_code=fix_example['before'],
+                            fixed_code=fix_example['after'],
+                            description=pattern_data['suggestion'],
+                            start_line=line_num,
+                            end_line=end_line,
+                            is_auto_fixable=False
+                        )
 
                     issue = LeakPattern(
                         type=pattern_data["type"],
                         severity=pattern_data["severity"],
                         file_path=file_path,
                         line_number=line_num,
+                        column=column,
+                        end_line=end_line,
+                        end_column=end_col,
                         code_snippet=snippet,
                         message=pattern_data["message"],
                         suggestion=pattern_data["suggestion"],
+                        fix=fix,
                         context={"pattern_name": name, "framework": "SwiftUI"}
                     )
                     issues.append(issue)
@@ -323,6 +385,7 @@ class MemoryLeakAnalyzer:
         return (
             f"Files: {result.total_files} | "
             f"Issues: {result.total_issues} | "
+            f"Fixable: {result.fixable_issues} | "
             f"Critical: {critical} | High: {high} | "
             f"Medium: {medium} | Low: {low}"
         )
