@@ -67,5 +67,6 @@ Thumbs.db
 *.log
 reports/
 *.html
+!index.html
 *.json
 !package.json

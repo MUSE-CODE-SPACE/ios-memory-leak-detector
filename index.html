@@ -1,0 +1,1250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>iOS Memory Leak Detector - Live Demo</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css">
+    <style>
+        :root {
+            --bg-primary: #0d1117;
+            --bg-secondary: #161b22;
+            --bg-tertiary: #21262d;
+            --text-primary: #f0f6fc;
+            --text-secondary: #8b949e;
+            --border-color: #30363d;
+            --accent-blue: #58a6ff;
+            --accent-green: #3fb950;
+            --accent-orange: #d29922;
+            --accent-red: #f85149;
+            --accent-purple: #a371f7;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #1a1f35 0%, #0d1117 100%);
+            border-bottom: 1px solid var(--border-color);
+            padding: 1.5rem 2rem;
+        }
+
+        .header-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo-icon {
+            width: 48px;
+            height: 48px;
+            background: linear-gradient(135deg, var(--accent-orange), var(--accent-red));
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+        }
+
+        .logo h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+        .logo span {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .header-links {
+            display: flex;
+            gap: 1rem;
+        }
+
+        .header-links a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+
+        .header-links a:hover {
+            color: var(--text-primary);
+            background: var(--bg-tertiary);
+        }
+
+        .main-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+            display: grid;
+            grid-template-columns: 1fr 400px;
+            gap: 2rem;
+        }
+
+        @media (max-width: 1200px) {
+            .main-container {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .editor-section {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            overflow: hidden;
+        }
+
+        .section-header {
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .section-title {
+            font-size: 1rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .language-tabs {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .lang-tab {
+            padding: 0.4rem 1rem;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+            background: transparent;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+        }
+
+        .lang-tab.active {
+            background: var(--accent-blue);
+            color: white;
+            border-color: var(--accent-blue);
+        }
+
+        .lang-tab:hover:not(.active) {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+        }
+
+        .editor-wrapper {
+            height: 500px;
+        }
+
+        .CodeMirror {
+            height: 100%;
+            font-size: 14px;
+            font-family: 'SF Mono', 'Fira Code', monospace;
+        }
+
+        .action-bar {
+            padding: 1rem 1.5rem;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .btn {
+            padding: 0.6rem 1.5rem;
+            border-radius: 8px;
+            border: none;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent-orange), #e87c00);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(210, 153, 34, 0.4);
+        }
+
+        .btn-secondary {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+        }
+
+        .btn-secondary:hover {
+            background: var(--border-color);
+        }
+
+        .sample-select {
+            padding: 0.6rem 1rem;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            font-size: 0.9rem;
+            cursor: pointer;
+        }
+
+        .results-section {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            overflow: hidden;
+        }
+
+        .results-summary {
+            padding: 1rem 1.5rem;
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .stat-card {
+            text-align: center;
+            padding: 0.5rem;
+        }
+
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+        }
+
+        .stat-critical .stat-value { color: var(--accent-red); }
+        .stat-high .stat-value { color: var(--accent-orange); }
+        .stat-medium .stat-value { color: #d29922; }
+        .stat-fixable .stat-value { color: var(--accent-green); }
+
+        .issues-list {
+            max-height: 520px;
+            overflow-y: auto;
+        }
+
+        .issue-item {
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .issue-item:hover {
+            background: var(--bg-tertiary);
+        }
+
+        .issue-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 0.5rem;
+        }
+
+        .issue-type {
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .severity-badge {
+            padding: 0.2rem 0.6rem;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .severity-critical { background: rgba(248, 81, 73, 0.2); color: var(--accent-red); }
+        .severity-high { background: rgba(210, 153, 34, 0.2); color: var(--accent-orange); }
+        .severity-medium { background: rgba(210, 153, 34, 0.15); color: #d29922; }
+        .severity-low { background: rgba(63, 185, 80, 0.2); color: var(--accent-green); }
+
+        .issue-location {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.4rem;
+        }
+
+        .issue-message {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            line-height: 1.4;
+        }
+
+        .fix-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 0.15rem 0.5rem;
+            background: rgba(63, 185, 80, 0.15);
+            color: var(--accent-green);
+            border-radius: 4px;
+            font-size: 0.7rem;
+            margin-left: 0.5rem;
+        }
+
+        .empty-state {
+            padding: 3rem;
+            text-align: center;
+            color: var(--text-secondary);
+        }
+
+        .empty-state-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+
+        .patterns-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 0.75rem;
+            padding: 1rem 1.5rem;
+        }
+
+        .pattern-card {
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            padding: 0.75rem 1rem;
+            border: 1px solid var(--border-color);
+        }
+
+        .pattern-name {
+            font-size: 0.8rem;
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }
+
+        .pattern-desc {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            max-width: 700px;
+            width: 90%;
+            max-height: 80vh;
+            overflow: hidden;
+        }
+
+        .modal-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 1.5rem;
+            cursor: pointer;
+        }
+
+        .modal-body {
+            padding: 1.5rem;
+            overflow-y: auto;
+            max-height: 60vh;
+        }
+
+        .fix-preview {
+            background: var(--bg-primary);
+            border-radius: 8px;
+            overflow: hidden;
+            margin-top: 1rem;
+        }
+
+        .fix-preview-header {
+            padding: 0.75rem 1rem;
+            background: var(--bg-tertiary);
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        .fix-preview pre {
+            padding: 1rem;
+            margin: 0;
+            font-family: 'SF Mono', monospace;
+            font-size: 0.85rem;
+            line-height: 1.5;
+            overflow-x: auto;
+        }
+
+        .line-removed {
+            background: rgba(248, 81, 73, 0.15);
+            color: #ffa198;
+        }
+
+        .line-added {
+            background: rgba(63, 185, 80, 0.15);
+            color: #7ee787;
+        }
+
+        .analyze-animation {
+            display: none;
+            align-items: center;
+            gap: 8px;
+            color: var(--accent-orange);
+        }
+
+        .analyze-animation.active {
+            display: flex;
+        }
+
+        .spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid var(--accent-orange);
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            padding: 1rem 1.5rem;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+            transform: translateY(100px);
+            opacity: 0;
+            transition: all 0.3s;
+        }
+
+        .toast.show {
+            transform: translateY(0);
+            opacity: 1;
+        }
+
+        .toast-success {
+            border-left: 3px solid var(--accent-green);
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="header-content">
+            <div class="logo">
+                <div class="logo-icon">🔍</div>
+                <div>
+                    <h1>iOS Memory Leak Detector</h1>
+                    <span>v2.1.0 - Live Static Analysis</span>
+                </div>
+            </div>
+            <nav class="header-links">
+                <a href="https://github.com/yoon-k/ios-memory-leak-detector">GitHub</a>
+                <a href="https://github.com/yoon-k/ios-memory-leak-detector#installation">Install CLI</a>
+                <a href="https://github.com/yoon-k/ios-memory-leak-detector#ci-cd-integration">CI/CD</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="main-container">
+        <div class="editor-section">
+            <div class="section-header">
+                <div class="section-title">
+                    <span>📝</span> Code Editor
+                </div>
+                <div class="language-tabs">
+                    <button class="lang-tab active" data-lang="swift">Swift</button>
+                    <button class="lang-tab" data-lang="objc">Objective-C</button>
+                    <button class="lang-tab" data-lang="swiftui">SwiftUI</button>
+                </div>
+            </div>
+            <div class="editor-wrapper">
+                <textarea id="code-editor"></textarea>
+            </div>
+            <div class="action-bar">
+                <button class="btn btn-primary" id="analyze-btn">
+                    <span>🔍</span> Analyze Code
+                </button>
+                <div class="analyze-animation" id="analyze-loading">
+                    <div class="spinner"></div>
+                    <span>Analyzing...</span>
+                </div>
+                <select class="sample-select" id="sample-select">
+                    <option value="">Load Sample...</option>
+                    <option value="closure">Closure Capture Issue</option>
+                    <option value="delegate">Non-weak Delegate</option>
+                    <option value="timer">Timer Retain Cycle</option>
+                    <option value="notification">Notification Observer</option>
+                    <option value="swiftui">SwiftUI ViewModel</option>
+                    <option value="objc-block">ObjC Block Issue</option>
+                    <option value="complex">Complex Example</option>
+                </select>
+                <button class="btn btn-secondary" id="clear-btn">Clear</button>
+                <button class="btn btn-secondary" id="apply-fixes-btn" style="display: none;">
+                    <span>🔧</span> Apply All Fixes
+                </button>
+            </div>
+        </div>
+
+        <div class="results-section">
+            <div class="section-header">
+                <div class="section-title">
+                    <span>📊</span> Analysis Results
+                </div>
+            </div>
+            <div class="results-summary">
+                <div class="stat-card stat-critical">
+                    <div class="stat-value" id="critical-count">0</div>
+                    <div class="stat-label">Critical</div>
+                </div>
+                <div class="stat-card stat-high">
+                    <div class="stat-value" id="high-count">0</div>
+                    <div class="stat-label">High</div>
+                </div>
+                <div class="stat-card stat-medium">
+                    <div class="stat-value" id="medium-count">0</div>
+                    <div class="stat-label">Medium</div>
+                </div>
+                <div class="stat-card stat-fixable">
+                    <div class="stat-value" id="fixable-count">0</div>
+                    <div class="stat-label">Fixable</div>
+                </div>
+            </div>
+            <div class="issues-list" id="issues-list">
+                <div class="empty-state">
+                    <div class="empty-state-icon">🎯</div>
+                    <p>Enter Swift or Objective-C code and click "Analyze" to detect memory leaks</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div class="modal" id="fix-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modal-title">Issue Details</h3>
+                <button class="modal-close" id="modal-close">&times;</button>
+            </div>
+            <div class="modal-body" id="modal-body"></div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/swift/swift.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
+    <script>
+        // iOS Memory Leak Detection Patterns
+        const PATTERNS = {
+            swift: [
+                {
+                    name: 'closure_self_capture',
+                    pattern: /(\{\s*(?:\[[\w\s,]*\])?\s*(?:\([^)]*\))?\s*(?:->[\w\s?]+)?\s*in\s+[\s\S]*?)self\./g,
+                    checkWeakSelf: true,
+                    severity: 'high',
+                    type: 'Closure Self Capture',
+                    message: "Closure captures 'self' without [weak self] or [unowned self]",
+                    suggestion: "Add [weak self] to the capture list and use 'self?' or guard",
+                    fixable: true,
+                    getFix: (match, line) => ({
+                        before: match.trim().split('\n')[0],
+                        after: match.replace(/\{\s*/, '{ [weak self] in\n        guard let self = self else { return }\n        ').trim().split('\n')[0]
+                    })
+                },
+                {
+                    name: 'non_weak_delegate',
+                    pattern: /var\s+(\w*delegate\w*)\s*:\s*(\w+)\??(?!\s*\{)/gi,
+                    checkWeak: true,
+                    severity: 'high',
+                    type: 'Non-weak Delegate',
+                    message: "Delegate property should be declared as 'weak' to avoid retain cycles",
+                    suggestion: "Change 'var delegate' to 'weak var delegate'",
+                    fixable: true,
+                    getFix: (match) => ({
+                        before: match,
+                        after: match.replace(/var\s+/, 'weak var ')
+                    })
+                },
+                {
+                    name: 'strong_iboutlet',
+                    pattern: /@IBOutlet\s+var\s+(\w+)\s*:\s*(\w+)!/g,
+                    severity: 'medium',
+                    type: 'Strong IBOutlet',
+                    message: "IBOutlet should be declared as 'weak' to prevent retain cycles with view hierarchy",
+                    suggestion: "Change '@IBOutlet var' to '@IBOutlet weak var'",
+                    fixable: true,
+                    getFix: (match) => ({
+                        before: match,
+                        after: match.replace(/@IBOutlet\s+var/, '@IBOutlet weak var').replace(/!$/, '?')
+                    })
+                },
+                {
+                    name: 'timer_creation',
+                    pattern: /Timer\.(scheduledTimer|init)\s*\([^)]*target:\s*self/g,
+                    severity: 'high',
+                    type: 'Timer Retain Cycle',
+                    message: "Timer retains its target strongly, causing a retain cycle",
+                    suggestion: "Use Timer with block API or invalidate in deinit",
+                    fixable: false
+                },
+                {
+                    name: 'notification_observer',
+                    pattern: /NotificationCenter\.default\.addObserver\s*\(\s*self/g,
+                    severity: 'medium',
+                    type: 'Notification Observer',
+                    message: "NotificationCenter observer may cause retain cycle if not removed",
+                    suggestion: "Remove observer in deinit or use block-based API with [weak self]",
+                    fixable: false
+                },
+                {
+                    name: 'dispatch_async_self',
+                    pattern: /DispatchQueue\.\w+\.async\s*\{\s*(?!\[[\w\s,]*weak[\w\s,]*\])[\s\S]*?self\./g,
+                    severity: 'medium',
+                    type: 'Dispatch Async Capture',
+                    message: "Dispatch block captures self strongly",
+                    suggestion: "Add [weak self] to prevent potential retain cycle",
+                    fixable: true,
+                    getFix: (match) => ({
+                        before: match.substring(0, 50) + '...',
+                        after: match.replace(/\.async\s*\{/, '.async { [weak self] in\n            guard let self = self else { return }').substring(0, 80) + '...'
+                    })
+                },
+                {
+                    name: 'escaping_closure',
+                    pattern: /@escaping\s*\([^)]*\)\s*->[^{]+\{[\s\S]*?self\./g,
+                    severity: 'high',
+                    type: 'Escaping Closure Capture',
+                    message: "Escaping closure captures self strongly",
+                    suggestion: "Use [weak self] or [unowned self] in capture list",
+                    fixable: false
+                }
+            ],
+            swiftui: [
+                {
+                    name: 'combine_sink_no_store',
+                    pattern: /\.sink\s*\{[^}]*\}(?!\s*\.store)/g,
+                    severity: 'high',
+                    type: 'Combine Sink Without Store',
+                    message: "Combine sink cancellable not stored - subscription will be immediately cancelled",
+                    suggestion: "Store the cancellable: .store(in: &cancellables)",
+                    fixable: true,
+                    getFix: (match) => ({
+                        before: match,
+                        after: match + '\n            .store(in: &cancellables)'
+                    })
+                },
+                {
+                    name: 'viewmodel_closure_self',
+                    pattern: /class\s+\w*ViewModel[\s\S]*?\{\s*(?!\[weak\s+self\])[\s\S]*?self\./g,
+                    severity: 'high',
+                    type: 'ViewModel Closure Self Capture',
+                    message: "ViewModel closure captures self strongly",
+                    suggestion: "Use [weak self] in closures within ViewModels",
+                    fixable: false
+                },
+                {
+                    name: 'network_in_body',
+                    pattern: /var\s+body\s*:\s*some\s+View\s*\{[\s\S]*?(URLSession|fetch|request)/g,
+                    severity: 'high',
+                    type: 'Network Call in View Body',
+                    message: "Network call in SwiftUI View body will execute on every render",
+                    suggestion: "Move network calls to onAppear or a ViewModel",
+                    fixable: false
+                },
+                {
+                    name: 'timer_in_body',
+                    pattern: /var\s+body\s*:\s*some\s+View\s*\{[\s\S]*?Timer\./g,
+                    severity: 'medium',
+                    type: 'Timer in View Body',
+                    message: "Timer created in View body may cause memory issues",
+                    suggestion: "Create Timer in onAppear and invalidate in onDisappear",
+                    fixable: false
+                }
+            ],
+            objc: [
+                {
+                    name: 'block_self_capture',
+                    pattern: /\^\s*(?:\([^)]*\))?\s*\{[\s\S]*?\bself\b/g,
+                    checkWeakSelf: true,
+                    severity: 'high',
+                    type: 'Block Self Capture',
+                    message: "Block captures 'self' strongly without __weak",
+                    suggestion: "Add '__weak typeof(self) weakSelf = self;' before block",
+                    fixable: true,
+                    getFix: (match) => ({
+                        before: match.substring(0, 40) + '...',
+                        after: '__weak typeof(self) weakSelf = self;\n    ' + match.replace(/self/g, 'weakSelf').substring(0, 40) + '...'
+                    })
+                },
+                {
+                    name: 'non_weak_delegate_objc',
+                    pattern: /@property\s*\([^)]*(?:strong|retain)[^)]*\)\s*(?:id<\w+>|\w+)\s*\*?\s*\w*delegate/gi,
+                    severity: 'high',
+                    type: 'Non-weak Delegate (ObjC)',
+                    message: "Delegate property uses strong/retain instead of weak",
+                    suggestion: "Change 'strong' to 'weak' in property attributes",
+                    fixable: true,
+                    getFix: (match) => ({
+                        before: match,
+                        after: match.replace(/strong|retain/, 'weak')
+                    })
+                },
+                {
+                    name: 'nstimer_creation',
+                    pattern: /\[NSTimer\s+scheduledTimerWithTimeInterval:[^]]*target:\s*self/g,
+                    severity: 'high',
+                    type: 'NSTimer Retain Cycle',
+                    message: "NSTimer retains its target strongly",
+                    suggestion: "Invalidate timer in dealloc or use proxy pattern",
+                    fixable: false
+                },
+                {
+                    name: 'strong_iboutlet_objc',
+                    pattern: /@property\s*\([^)]*strong[^)]*\)\s*IBOutlet/g,
+                    severity: 'medium',
+                    type: 'Strong IBOutlet (ObjC)',
+                    message: "IBOutlet should use weak, not strong",
+                    suggestion: "Change 'strong' to 'weak' for IBOutlet",
+                    fixable: true,
+                    getFix: (match) => ({
+                        before: match,
+                        after: match.replace(/strong/, 'weak')
+                    })
+                },
+                {
+                    name: 'dispatch_async_objc',
+                    pattern: /dispatch_async\s*\([^,]+,\s*\^\s*\{[\s\S]*?self/g,
+                    severity: 'medium',
+                    type: 'Dispatch Async Block Capture',
+                    message: "Dispatch block captures self strongly",
+                    suggestion: "Use __weak reference before the block",
+                    fixable: true,
+                    getFix: (match) => ({
+                        before: match.substring(0, 40) + '...',
+                        after: '__weak typeof(self) weakSelf = self;\n    ' + match.replace(/self/g, 'weakSelf').substring(0, 40) + '...'
+                    })
+                }
+            ]
+        };
+
+        const SAMPLES = {
+            closure: `class NetworkManager {
+    var completionHandler: (() -> Void)?
+
+    func fetchData() {
+        // Memory leak: closure captures self strongly
+        completionHandler = {
+            self.processData()
+            self.updateUI()
+        }
+    }
+
+    func processData() { }
+    func updateUI() { }
+}`,
+            delegate: `protocol DataDelegate: AnyObject {
+    func didReceiveData(_ data: Data)
+}
+
+class DataManager {
+    // Memory leak: delegate should be weak
+    var delegate: DataDelegate?
+
+    func loadData() {
+        // ...
+        delegate?.didReceiveData(Data())
+    }
+}`,
+            timer: `class TimerViewController: UIViewController {
+    var timer: Timer?
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        // Memory leak: Timer retains self strongly
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0, target: self, selector: #selector(tick), userInfo: nil, repeats: true)
+    }
+
+    @objc func tick() {
+        print("Tick")
+    }
+}`,
+            notification: `class NotificationObserver: UIViewController {
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        // Potential leak: observer not removed
+        NotificationCenter.default.addObserver(self, selector: #selector(handleNotification), name: .someNotification, object: nil)
+    }
+
+    @objc func handleNotification() {
+        // Handle notification
+    }
+
+    // Missing: removeObserver in deinit
+}`,
+            swiftui: `import SwiftUI
+import Combine
+
+class UserViewModel: ObservableObject {
+    @Published var name: String = ""
+    var cancellables = Set<AnyCancellable>()
+
+    init() {
+        // Memory leak: closure captures self without [weak self]
+        fetchUser()
+            .sink { completion in
+                self.handleCompletion(completion)
+            } receiveValue: { user in
+                self.name = user.name
+            }
+            // Missing: .store(in: &cancellables)
+    }
+
+    func fetchUser() -> AnyPublisher<User, Error> {
+        // Network call
+    }
+
+    func handleCompletion(_ completion: Subscribers.Completion<Error>) {
+        // Handle completion
+    }
+}`,
+            'objc-block': `@interface DataFetcher : NSObject
+@property (nonatomic, strong) id<DataDelegate> delegate; // Should be weak
+@property (nonatomic, copy) void (^completionBlock)(NSData *);
+@end
+
+@implementation DataFetcher
+
+- (void)fetchData {
+    // Memory leak: block captures self strongly
+    self.completionBlock = ^(NSData *data) {
+        [self processData:data];
+        [self notifyDelegate];
+    };
+
+    // Another leak: dispatch block captures self
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self updateUI];
+    });
+}
+
+@end`,
+            complex: `class ComplexViewController: UIViewController {
+    // Issue 1: Strong IBOutlet
+    @IBOutlet var headerView: UIView!
+
+    // Issue 2: Non-weak delegate
+    var delegate: ViewControllerDelegate?
+
+    var timer: Timer?
+    var completionHandler: (() -> Void)?
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+
+        // Issue 3: Timer retain cycle
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0, target: self, selector: #selector(tick), userInfo: nil, repeats: true)
+
+        // Issue 4: Closure self capture
+        completionHandler = {
+            self.updateUI()
+        }
+
+        // Issue 5: Notification observer
+        NotificationCenter.default.addObserver(self, selector: #selector(handleNotification), name: .dataLoaded, object: nil)
+
+        // Issue 6: Dispatch async capture
+        DispatchQueue.main.async {
+            self.refreshView()
+        }
+    }
+
+    @objc func tick() { }
+    @objc func handleNotification() { }
+    func updateUI() { }
+    func refreshView() { }
+}
+
+protocol ViewControllerDelegate: AnyObject {
+    func didComplete()
+}`
+        };
+
+        // Initialize CodeMirror
+        const editor = CodeMirror.fromTextArea(document.getElementById('code-editor'), {
+            mode: 'swift',
+            theme: 'dracula',
+            lineNumbers: true,
+            tabSize: 4,
+            indentUnit: 4,
+            lineWrapping: true
+        });
+
+        // Set default content
+        editor.setValue(SAMPLES.closure);
+
+        let currentLanguage = 'swift';
+        let currentIssues = [];
+
+        // Language tab switching
+        document.querySelectorAll('.lang-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.lang-tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                currentLanguage = tab.dataset.lang;
+
+                if (currentLanguage === 'objc') {
+                    editor.setOption('mode', 'text/x-objectivec');
+                    editor.setValue(SAMPLES['objc-block']);
+                } else if (currentLanguage === 'swiftui') {
+                    editor.setOption('mode', 'swift');
+                    editor.setValue(SAMPLES.swiftui);
+                } else {
+                    editor.setOption('mode', 'swift');
+                    editor.setValue(SAMPLES.closure);
+                }
+            });
+        });
+
+        // Sample selection
+        document.getElementById('sample-select').addEventListener('change', (e) => {
+            if (e.target.value && SAMPLES[e.target.value]) {
+                editor.setValue(SAMPLES[e.target.value]);
+
+                // Switch language tab if needed
+                if (e.target.value === 'objc-block') {
+                    document.querySelector('[data-lang="objc"]').click();
+                } else if (e.target.value === 'swiftui') {
+                    document.querySelector('[data-lang="swiftui"]').click();
+                } else {
+                    document.querySelector('[data-lang="swift"]').click();
+                }
+            }
+            e.target.value = '';
+        });
+
+        // Clear button
+        document.getElementById('clear-btn').addEventListener('click', () => {
+            editor.setValue('');
+            clearResults();
+        });
+
+        // Analyze button
+        document.getElementById('analyze-btn').addEventListener('click', analyzeCode);
+
+        function analyzeCode() {
+            const code = editor.getValue();
+            if (!code.trim()) {
+                showToast('Please enter some code to analyze');
+                return;
+            }
+
+            const loading = document.getElementById('analyze-loading');
+            loading.classList.add('active');
+
+            // Simulate analysis delay for UX
+            setTimeout(() => {
+                const issues = detectIssues(code);
+                currentIssues = issues;
+                displayResults(issues);
+                loading.classList.remove('active');
+
+                if (issues.length === 0) {
+                    showToast('No memory leak issues detected!', 'success');
+                }
+            }, 500);
+        }
+
+        function detectIssues(code) {
+            const issues = [];
+            const lines = code.split('\n');
+
+            // Get patterns based on language
+            let patterns = [...PATTERNS.swift];
+            if (currentLanguage === 'objc') {
+                patterns = PATTERNS.objc;
+            } else if (currentLanguage === 'swiftui') {
+                patterns = [...PATTERNS.swift, ...PATTERNS.swiftui];
+            }
+
+            patterns.forEach(pattern => {
+                let match;
+                const regex = new RegExp(pattern.pattern.source, pattern.pattern.flags);
+
+                while ((match = regex.exec(code)) !== null) {
+                    // Check if [weak self] already exists
+                    if (pattern.checkWeakSelf) {
+                        const beforeMatch = code.substring(Math.max(0, match.index - 100), match.index);
+                        if (/\[[\w\s,]*(weak|unowned)[\w\s,]*self[\w\s,]*\]/.test(beforeMatch) ||
+                            /\[[\w\s,]*(weak|unowned)[\w\s,]*self[\w\s,]*\]\s*in/.test(match[0])) {
+                            continue;
+                        }
+                    }
+
+                    // Check if weak already declared
+                    if (pattern.checkWeak && /weak\s+var/.test(match[0])) {
+                        continue;
+                    }
+
+                    // Calculate line number
+                    const lineNumber = code.substring(0, match.index).split('\n').length;
+                    const column = match.index - code.lastIndexOf('\n', match.index - 1);
+
+                    // Get code context
+                    const startLine = Math.max(0, lineNumber - 2);
+                    const endLine = Math.min(lines.length, lineNumber + 2);
+                    const context = lines.slice(startLine, endLine)
+                        .map((line, i) => ({
+                            num: startLine + i + 1,
+                            text: line,
+                            highlight: startLine + i + 1 === lineNumber
+                        }));
+
+                    issues.push({
+                        type: pattern.type,
+                        severity: pattern.severity,
+                        message: pattern.message,
+                        suggestion: pattern.suggestion,
+                        line: lineNumber,
+                        column: column,
+                        matchedCode: match[0],
+                        context: context,
+                        fixable: pattern.fixable || false,
+                        fix: pattern.getFix ? pattern.getFix(match[0], lineNumber) : null
+                    });
+                }
+            });
+
+            // Sort by line number
+            issues.sort((a, b) => a.line - b.line);
+
+            return issues;
+        }
+
+        function displayResults(issues) {
+            const criticalCount = issues.filter(i => i.severity === 'critical').length;
+            const highCount = issues.filter(i => i.severity === 'high').length;
+            const mediumCount = issues.filter(i => i.severity === 'medium').length;
+            const fixableCount = issues.filter(i => i.fixable).length;
+
+            document.getElementById('critical-count').textContent = criticalCount;
+            document.getElementById('high-count').textContent = highCount;
+            document.getElementById('medium-count').textContent = mediumCount;
+            document.getElementById('fixable-count').textContent = fixableCount;
+
+            const issuesList = document.getElementById('issues-list');
+
+            if (issues.length === 0) {
+                issuesList.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">✅</div>
+                        <p>No memory leak issues detected!</p>
+                    </div>
+                `;
+                document.getElementById('apply-fixes-btn').style.display = 'none';
+                return;
+            }
+
+            issuesList.innerHTML = issues.map((issue, index) => `
+                <div class="issue-item" data-index="${index}">
+                    <div class="issue-header">
+                        <span class="issue-type">${issue.type}</span>
+                        <span class="severity-badge severity-${issue.severity}">${issue.severity}</span>
+                    </div>
+                    <div class="issue-location">Line ${issue.line}, Column ${issue.column}</div>
+                    <div class="issue-message">
+                        ${issue.message}
+                        ${issue.fixable ? '<span class="fix-badge">🔧 Auto-fix available</span>' : ''}
+                    </div>
+                </div>
+            `).join('');
+
+            // Show apply fixes button if there are fixable issues
+            document.getElementById('apply-fixes-btn').style.display = fixableCount > 0 ? 'flex' : 'none';
+
+            // Add click handlers
+            document.querySelectorAll('.issue-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    const index = parseInt(item.dataset.index);
+                    showIssueModal(issues[index]);
+                });
+            });
+        }
+
+        function showIssueModal(issue) {
+            const modal = document.getElementById('fix-modal');
+            const title = document.getElementById('modal-title');
+            const body = document.getElementById('modal-body');
+
+            title.textContent = issue.type;
+
+            let contextHtml = issue.context.map(line =>
+                `<div class="${line.highlight ? 'line-highlight' : ''}" style="${line.highlight ? 'background: rgba(210, 153, 34, 0.2);' : ''}">
+                    <span style="color: var(--text-secondary); margin-right: 1rem;">${line.num}</span>${escapeHtml(line.text)}
+                </div>`
+            ).join('');
+
+            let fixHtml = '';
+            if (issue.fix) {
+                fixHtml = `
+                    <div class="fix-preview">
+                        <div class="fix-preview-header">🔧 Suggested Fix</div>
+                        <pre><div class="line-removed">- ${escapeHtml(issue.fix.before)}</div><div class="line-added">+ ${escapeHtml(issue.fix.after)}</div></pre>
+                    </div>
+                `;
+            }
+
+            body.innerHTML = `
+                <p><strong>Severity:</strong> <span class="severity-badge severity-${issue.severity}">${issue.severity}</span></p>
+                <p><strong>Location:</strong> Line ${issue.line}, Column ${issue.column}</p>
+                <p style="margin-top: 1rem;"><strong>Message:</strong></p>
+                <p style="color: var(--text-secondary);">${issue.message}</p>
+                <p style="margin-top: 1rem;"><strong>Suggestion:</strong></p>
+                <p style="color: var(--accent-green);">${issue.suggestion}</p>
+                <div style="margin-top: 1rem;">
+                    <strong>Code Context:</strong>
+                    <div class="fix-preview" style="margin-top: 0.5rem;">
+                        <pre style="font-size: 0.8rem;">${contextHtml}</pre>
+                    </div>
+                </div>
+                ${fixHtml}
+            `;
+
+            modal.classList.add('active');
+        }
+
+        function clearResults() {
+            document.getElementById('critical-count').textContent = '0';
+            document.getElementById('high-count').textContent = '0';
+            document.getElementById('medium-count').textContent = '0';
+            document.getElementById('fixable-count').textContent = '0';
+            document.getElementById('issues-list').innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">🎯</div>
+                    <p>Enter Swift or Objective-C code and click "Analyze" to detect memory leaks</p>
+                </div>
+            `;
+            document.getElementById('apply-fixes-btn').style.display = 'none';
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function showToast(message, type = 'info') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = 'toast' + (type === 'success' ? ' toast-success' : '');
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+
+        // Modal close
+        document.getElementById('modal-close').addEventListener('click', () => {
+            document.getElementById('fix-modal').classList.remove('active');
+        });
+
+        document.getElementById('fix-modal').addEventListener('click', (e) => {
+            if (e.target.id === 'fix-modal') {
+                document.getElementById('fix-modal').classList.remove('active');
+            }
+        });
+
+        // Apply fixes button
+        document.getElementById('apply-fixes-btn').addEventListener('click', () => {
+            const fixableIssues = currentIssues.filter(i => i.fixable && i.fix);
+            if (fixableIssues.length === 0) return;
+
+            let code = editor.getValue();
+            const lines = code.split('\n');
+
+            // Apply fixes from bottom to top to preserve line numbers
+            fixableIssues.sort((a, b) => b.line - a.line);
+
+            fixableIssues.forEach(issue => {
+                const lineIndex = issue.line - 1;
+                if (lineIndex >= 0 && lineIndex < lines.length) {
+                    // Simple replacement - in a real implementation this would be more sophisticated
+                    if (issue.type === 'Non-weak Delegate') {
+                        lines[lineIndex] = lines[lineIndex].replace(/var\s+/, 'weak var ');
+                    } else if (issue.type === 'Strong IBOutlet') {
+                        lines[lineIndex] = lines[lineIndex].replace(/@IBOutlet\s+var/, '@IBOutlet weak var');
+                    }
+                }
+            });
+
+            editor.setValue(lines.join('\n'));
+            showToast(`Applied ${fixableIssues.length} fixes. Re-analyze to verify.`, 'success');
+
+            // Re-analyze
+            setTimeout(analyzeCode, 500);
+        });
+
+        // Keyboard shortcut
+        document.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                analyzeCode();
+            }
+        });
+    </script>
+</body>
+</html>
