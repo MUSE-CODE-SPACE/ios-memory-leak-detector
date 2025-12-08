@@ -1,0 +1,9 @@
+# iOS Memory Leak Detector - Requirements
+# No external dependencies for core functionality!
+
+# Development dependencies (optional)
+# pytest>=7.0
+# pytest-cov>=4.0
+# black>=23.0
+# flake8>=6.0
+# mypy>=1.0
