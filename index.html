@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>iOS Memory Leak Detector - Live Demo</title>
+    <meta name="description" content="Swift/Objective-C memory leak static analysis tool with auto-fix support">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css">
     <style>
@@ -483,6 +484,34 @@
         .toast-success {
             border-left: 3px solid var(--accent-green);
         }
+
+        .lang-selector {
+            display: flex;
+            gap: 4px;
+        }
+
+        .lang-btn {
+            padding: 4px 8px;
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.75rem;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .lang-btn:hover {
+            border-color: var(--accent-orange);
+            color: var(--text-primary);
+        }
+
+        .lang-btn.active {
+            background: var(--accent-orange);
+            border-color: var(--accent-orange);
+            color: white;
+        }
     </style>
 </head>
 <body>
@@ -496,8 +525,14 @@
                 </div>
             </div>
             <nav class="header-links">
+                <div class="lang-selector">
+                    <button class="lang-btn active" data-lang="en" onclick="setLanguage('en')">EN</button>
+                    <button class="lang-btn" data-lang="ko" onclick="setLanguage('ko')">KO</button>
+                    <button class="lang-btn" data-lang="ja" onclick="setLanguage('ja')">JA</button>
+                    <button class="lang-btn" data-lang="zh" onclick="setLanguage('zh')">ZH</button>
+                </div>
                 <a href="https://github.com/yoon-k/ios-memory-leak-detector">GitHub</a>
-                <a href="https://github.com/yoon-k/ios-memory-leak-detector#installation">Install CLI</a>
+                <a href="https://github.com/yoon-k/ios-memory-leak-detector#installation" id="link-install">Install CLI</a>
                 <a href="https://github.com/yoon-k/ios-memory-leak-detector#ci-cd-integration">CI/CD</a>
             </nav>
         </div>
@@ -592,6 +627,561 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/swift/swift.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
     <script>
+        // i18n - Multi-language support
+        let currentLang = 'en';
+        const i18n = {
+            en: {
+                title: 'iOS Memory Leak Detector',
+                subtitle: 'v2.1.0 - Live Static Analysis',
+                codeEditor: 'Code Editor',
+                analyzeBtn: 'Analyze Code',
+                analyzing: 'Analyzing...',
+                loadSample: 'Load Sample...',
+                clear: 'Clear',
+                applyFixes: 'Apply All Fixes',
+                results: 'Analysis Results',
+                critical: 'Critical',
+                high: 'High',
+                medium: 'Medium',
+                fixable: 'Fixable',
+                line: 'Line',
+                column: 'Column',
+                autoFixAvailable: 'Auto-fix available',
+                issueDetails: 'Issue Details',
+                severity: 'Severity',
+                location: 'Location',
+                message: 'Message',
+                suggestion: 'Suggestion',
+                codeContext: 'Code Context',
+                suggestedFix: 'Suggested Fix',
+                noIssues: 'No memory leak issues detected!',
+                enterCode: 'Enter Swift or Objective-C code and click "Analyze" to detect memory leaks',
+                appliedFixes: 'Applied {0} fixes. Re-analyze to verify.',
+                installCli: 'Install CLI',
+                samples: {
+                    closure: 'Closure Capture Issue',
+                    delegate: 'Non-weak Delegate',
+                    timer: 'Timer Retain Cycle',
+                    notification: 'Notification Observer',
+                    swiftui: 'SwiftUI ViewModel',
+                    objcBlock: 'ObjC Block Issue',
+                    complex: 'Complex Example'
+                },
+                patterns: {
+                    closure_self_capture: {
+                        type: 'Closure Self Capture',
+                        message: "Closure captures 'self' without [weak self] or [unowned self]",
+                        suggestion: "Add [weak self] to the capture list and use 'self?' or guard"
+                    },
+                    non_weak_delegate: {
+                        type: 'Non-weak Delegate',
+                        message: "Delegate property should be declared as 'weak' to avoid retain cycles",
+                        suggestion: "Change 'var delegate' to 'weak var delegate'"
+                    },
+                    strong_iboutlet: {
+                        type: 'Strong IBOutlet',
+                        message: "IBOutlet should be declared as 'weak' to prevent retain cycles with view hierarchy",
+                        suggestion: "Change '@IBOutlet var' to '@IBOutlet weak var'"
+                    },
+                    timer_creation: {
+                        type: 'Timer Retain Cycle',
+                        message: "Timer retains its target strongly, causing a retain cycle",
+                        suggestion: "Use Timer with block API or invalidate in deinit"
+                    },
+                    notification_observer: {
+                        type: 'Notification Observer',
+                        message: "NotificationCenter observer may cause retain cycle if not removed",
+                        suggestion: "Remove observer in deinit or use block-based API with [weak self]"
+                    },
+                    dispatch_async_self: {
+                        type: 'Dispatch Async Capture',
+                        message: "Dispatch block captures self strongly",
+                        suggestion: "Add [weak self] to prevent potential retain cycle"
+                    },
+                    escaping_closure: {
+                        type: 'Escaping Closure Capture',
+                        message: "Escaping closure captures self strongly",
+                        suggestion: "Use [weak self] or [unowned self] in capture list"
+                    },
+                    combine_sink_no_store: {
+                        type: 'Combine Sink Without Store',
+                        message: "Combine sink cancellable not stored - subscription will be immediately cancelled",
+                        suggestion: "Store the cancellable: .store(in: &cancellables)"
+                    },
+                    viewmodel_closure_self: {
+                        type: 'ViewModel Closure Self Capture',
+                        message: "ViewModel closure captures self strongly",
+                        suggestion: "Use [weak self] in closures within ViewModels"
+                    },
+                    network_in_body: {
+                        type: 'Network Call in View Body',
+                        message: "Network call in SwiftUI View body will execute on every render",
+                        suggestion: "Move network calls to onAppear or a ViewModel"
+                    },
+                    timer_in_body: {
+                        type: 'Timer in View Body',
+                        message: "Timer created in View body may cause memory issues",
+                        suggestion: "Create Timer in onAppear and invalidate in onDisappear"
+                    },
+                    block_self_capture: {
+                        type: 'Block Self Capture',
+                        message: "Block captures 'self' strongly without __weak",
+                        suggestion: "Add '__weak typeof(self) weakSelf = self;' before block"
+                    },
+                    non_weak_delegate_objc: {
+                        type: 'Non-weak Delegate (ObjC)',
+                        message: "Delegate property uses strong/retain instead of weak",
+                        suggestion: "Change 'strong' to 'weak' in property attributes"
+                    },
+                    nstimer_creation: {
+                        type: 'NSTimer Retain Cycle',
+                        message: "NSTimer retains its target strongly",
+                        suggestion: "Invalidate timer in dealloc or use proxy pattern"
+                    },
+                    strong_iboutlet_objc: {
+                        type: 'Strong IBOutlet (ObjC)',
+                        message: "IBOutlet should use weak, not strong",
+                        suggestion: "Change 'strong' to 'weak' for IBOutlet"
+                    },
+                    dispatch_async_objc: {
+                        type: 'Dispatch Async Block Capture',
+                        message: "Dispatch block captures self strongly",
+                        suggestion: "Use __weak reference before the block"
+                    }
+                }
+            },
+            ko: {
+                title: 'iOS 메모리 누수 검출기',
+                subtitle: 'v2.1.0 - 실시간 정적 분석',
+                codeEditor: '코드 에디터',
+                analyzeBtn: '코드 분석',
+                analyzing: '분석 중...',
+                loadSample: '샘플 불러오기...',
+                clear: '지우기',
+                applyFixes: '모든 수정 적용',
+                results: '분석 결과',
+                critical: '심각',
+                high: '높음',
+                medium: '보통',
+                fixable: '자동수정',
+                line: '라인',
+                column: '열',
+                autoFixAvailable: '자동 수정 가능',
+                issueDetails: '이슈 상세',
+                severity: '심각도',
+                location: '위치',
+                message: '메시지',
+                suggestion: '제안',
+                codeContext: '코드 컨텍스트',
+                suggestedFix: '제안된 수정',
+                noIssues: '메모리 누수 이슈가 발견되지 않았습니다!',
+                enterCode: 'Swift 또는 Objective-C 코드를 입력하고 "코드 분석"을 클릭하세요',
+                appliedFixes: '{0}개의 수정 사항이 적용되었습니다. 다시 분석하여 확인하세요.',
+                installCli: 'CLI 설치',
+                samples: {
+                    closure: '클로저 캡처 이슈',
+                    delegate: 'weak 없는 델리게이트',
+                    timer: '타이머 순환 참조',
+                    notification: '노티피케이션 옵저버',
+                    swiftui: 'SwiftUI 뷰모델',
+                    objcBlock: 'ObjC 블록 이슈',
+                    complex: '복합 예제'
+                },
+                patterns: {
+                    closure_self_capture: {
+                        type: '클로저 self 캡처',
+                        message: "클로저가 [weak self] 또는 [unowned self] 없이 'self'를 캡처합니다",
+                        suggestion: "캡처 리스트에 [weak self]를 추가하고 'self?' 또는 guard 사용"
+                    },
+                    non_weak_delegate: {
+                        type: 'weak 없는 델리게이트',
+                        message: "순환 참조를 방지하기 위해 델리게이트 프로퍼티는 'weak'으로 선언해야 합니다",
+                        suggestion: "'var delegate'를 'weak var delegate'로 변경하세요"
+                    },
+                    strong_iboutlet: {
+                        type: 'Strong IBOutlet',
+                        message: "뷰 계층 구조와의 순환 참조를 방지하기 위해 IBOutlet은 'weak'으로 선언해야 합니다",
+                        suggestion: "'@IBOutlet var'를 '@IBOutlet weak var'로 변경하세요"
+                    },
+                    timer_creation: {
+                        type: '타이머 순환 참조',
+                        message: "Timer가 target을 강하게 참조하여 순환 참조가 발생합니다",
+                        suggestion: "블록 기반 Timer API를 사용하거나 deinit에서 invalidate 호출"
+                    },
+                    notification_observer: {
+                        type: '노티피케이션 옵저버',
+                        message: "NotificationCenter 옵저버가 제거되지 않으면 순환 참조가 발생할 수 있습니다",
+                        suggestion: "deinit에서 옵저버를 제거하거나 [weak self]와 함께 블록 기반 API 사용"
+                    },
+                    dispatch_async_self: {
+                        type: 'Dispatch Async 캡처',
+                        message: "Dispatch 블록이 self를 강하게 캡처합니다",
+                        suggestion: "잠재적 순환 참조를 방지하기 위해 [weak self] 추가"
+                    },
+                    escaping_closure: {
+                        type: '탈출 클로저 캡처',
+                        message: "탈출 클로저가 self를 강하게 캡처합니다",
+                        suggestion: "캡처 리스트에 [weak self] 또는 [unowned self] 사용"
+                    },
+                    combine_sink_no_store: {
+                        type: 'Combine Sink 저장 누락',
+                        message: "Combine sink cancellable이 저장되지 않음 - 구독이 즉시 취소됩니다",
+                        suggestion: "cancellable 저장: .store(in: &cancellables)"
+                    },
+                    viewmodel_closure_self: {
+                        type: 'ViewModel 클로저 self 캡처',
+                        message: "ViewModel 클로저가 self를 강하게 캡처합니다",
+                        suggestion: "ViewModel 내 클로저에서 [weak self] 사용"
+                    },
+                    network_in_body: {
+                        type: 'View Body 내 네트워크 호출',
+                        message: "SwiftUI View body의 네트워크 호출은 매 렌더링마다 실행됩니다",
+                        suggestion: "네트워크 호출을 onAppear 또는 ViewModel로 이동"
+                    },
+                    timer_in_body: {
+                        type: 'View Body 내 타이머',
+                        message: "View body에서 생성된 Timer가 메모리 문제를 일으킬 수 있습니다",
+                        suggestion: "onAppear에서 Timer를 생성하고 onDisappear에서 invalidate"
+                    },
+                    block_self_capture: {
+                        type: '블록 self 캡처',
+                        message: "__weak 없이 블록이 'self'를 강하게 캡처합니다",
+                        suggestion: "블록 전에 '__weak typeof(self) weakSelf = self;' 추가"
+                    },
+                    non_weak_delegate_objc: {
+                        type: 'weak 없는 델리게이트 (ObjC)',
+                        message: "델리게이트 프로퍼티가 weak 대신 strong/retain 사용",
+                        suggestion: "프로퍼티 속성에서 'strong'을 'weak'으로 변경"
+                    },
+                    nstimer_creation: {
+                        type: 'NSTimer 순환 참조',
+                        message: "NSTimer가 target을 강하게 참조합니다",
+                        suggestion: "dealloc에서 timer invalidate 또는 프록시 패턴 사용"
+                    },
+                    strong_iboutlet_objc: {
+                        type: 'Strong IBOutlet (ObjC)',
+                        message: "IBOutlet은 strong이 아닌 weak을 사용해야 합니다",
+                        suggestion: "IBOutlet에서 'strong'을 'weak'으로 변경"
+                    },
+                    dispatch_async_objc: {
+                        type: 'Dispatch Async 블록 캡처',
+                        message: "Dispatch 블록이 self를 강하게 캡처합니다",
+                        suggestion: "블록 전에 __weak 참조 사용"
+                    }
+                }
+            },
+            ja: {
+                title: 'iOS メモリリーク検出ツール',
+                subtitle: 'v2.1.0 - ライブ静的解析',
+                codeEditor: 'コードエディタ',
+                analyzeBtn: 'コード解析',
+                analyzing: '解析中...',
+                loadSample: 'サンプル読込...',
+                clear: 'クリア',
+                applyFixes: 'すべての修正を適用',
+                results: '解析結果',
+                critical: 'クリティカル',
+                high: '高',
+                medium: '中',
+                fixable: '自動修正',
+                line: '行',
+                column: '列',
+                autoFixAvailable: '自動修正可能',
+                issueDetails: '問題の詳細',
+                severity: '重要度',
+                location: '場所',
+                message: 'メッセージ',
+                suggestion: '提案',
+                codeContext: 'コードコンテキスト',
+                suggestedFix: '修正案',
+                noIssues: 'メモリリークの問題は検出されませんでした！',
+                enterCode: 'SwiftまたはObjective-Cコードを入力し、「コード解析」をクリックしてメモリリークを検出',
+                appliedFixes: '{0}件の修正が適用されました。再解析して確認してください。',
+                installCli: 'CLIインストール',
+                samples: {
+                    closure: 'クロージャキャプチャ問題',
+                    delegate: 'weak未使用デリゲート',
+                    timer: 'タイマー循環参照',
+                    notification: '通知オブザーバー',
+                    swiftui: 'SwiftUI ViewModel',
+                    objcBlock: 'ObjCブロック問題',
+                    complex: '複合例'
+                },
+                patterns: {
+                    closure_self_capture: {
+                        type: 'クロージャselfキャプチャ',
+                        message: "クロージャが[weak self]または[unowned self]なしで'self'をキャプチャしています",
+                        suggestion: "キャプチャリストに[weak self]を追加し、'self?'またはguardを使用"
+                    },
+                    non_weak_delegate: {
+                        type: 'weak未使用デリゲート',
+                        message: "循環参照を避けるため、デリゲートプロパティは'weak'で宣言する必要があります",
+                        suggestion: "'var delegate'を'weak var delegate'に変更"
+                    },
+                    strong_iboutlet: {
+                        type: 'Strong IBOutlet',
+                        message: "ビュー階層との循環参照を防ぐため、IBOutletは'weak'で宣言すべきです",
+                        suggestion: "'@IBOutlet var'を'@IBOutlet weak var'に変更"
+                    },
+                    timer_creation: {
+                        type: 'タイマー循環参照',
+                        message: "Timerがtargetを強参照し、循環参照が発生します",
+                        suggestion: "ブロックベースのTimer APIを使用するか、deinitでinvalidate"
+                    },
+                    notification_observer: {
+                        type: '通知オブザーバー',
+                        message: "NotificationCenterオブザーバーが削除されないと循環参照の可能性があります",
+                        suggestion: "deinitでオブザーバーを削除するか、[weak self]付きブロックAPIを使用"
+                    },
+                    dispatch_async_self: {
+                        type: 'Dispatch Asyncキャプチャ',
+                        message: "Dispatchブロックがselfを強キャプチャしています",
+                        suggestion: "循環参照を防ぐため[weak self]を追加"
+                    },
+                    escaping_closure: {
+                        type: 'escapingクロージャキャプチャ',
+                        message: "escapingクロージャがselfを強キャプチャしています",
+                        suggestion: "キャプチャリストで[weak self]または[unowned self]を使用"
+                    },
+                    combine_sink_no_store: {
+                        type: 'Combine Sink未保存',
+                        message: "Combine sink cancellableが保存されていない - 購読が即座にキャンセルされます",
+                        suggestion: "cancellableを保存: .store(in: &cancellables)"
+                    },
+                    viewmodel_closure_self: {
+                        type: 'ViewModelクロージャselfキャプチャ',
+                        message: "ViewModelクロージャがselfを強キャプチャしています",
+                        suggestion: "ViewModel内のクロージャで[weak self]を使用"
+                    },
+                    network_in_body: {
+                        type: 'View Body内ネットワーク呼び出し',
+                        message: "SwiftUI View body内のネットワーク呼び出しは毎回レンダリング時に実行されます",
+                        suggestion: "ネットワーク呼び出しをonAppearまたはViewModelに移動"
+                    },
+                    timer_in_body: {
+                        type: 'View Body内タイマー',
+                        message: "View bodyで作成されたTimerはメモリ問題を引き起こす可能性があります",
+                        suggestion: "onAppearでTimerを作成し、onDisappearでinvalidate"
+                    },
+                    block_self_capture: {
+                        type: 'ブロックselfキャプチャ',
+                        message: "__weakなしでブロックが'self'を強キャプチャしています",
+                        suggestion: "ブロックの前に'__weak typeof(self) weakSelf = self;'を追加"
+                    },
+                    non_weak_delegate_objc: {
+                        type: 'weak未使用デリゲート(ObjC)',
+                        message: "デリゲートプロパティがweakではなくstrong/retainを使用",
+                        suggestion: "プロパティ属性の'strong'を'weak'に変更"
+                    },
+                    nstimer_creation: {
+                        type: 'NSTimer循環参照',
+                        message: "NSTimerがtargetを強参照しています",
+                        suggestion: "deallocでtimer invalidateまたはプロキシパターンを使用"
+                    },
+                    strong_iboutlet_objc: {
+                        type: 'Strong IBOutlet (ObjC)',
+                        message: "IBOutletはstrongではなくweakを使用すべきです",
+                        suggestion: "IBOutletの'strong'を'weak'に変更"
+                    },
+                    dispatch_async_objc: {
+                        type: 'Dispatch Asyncブロックキャプチャ',
+                        message: "Dispatchブロックがselfを強キャプチャしています",
+                        suggestion: "ブロックの前に__weak参照を使用"
+                    }
+                }
+            },
+            zh: {
+                title: 'iOS 内存泄漏检测器',
+                subtitle: 'v2.1.0 - 实时静态分析',
+                codeEditor: '代码编辑器',
+                analyzeBtn: '分析代码',
+                analyzing: '分析中...',
+                loadSample: '加载示例...',
+                clear: '清除',
+                applyFixes: '应用所有修复',
+                results: '分析结果',
+                critical: '严重',
+                high: '高',
+                medium: '中',
+                fixable: '可修复',
+                line: '行',
+                column: '列',
+                autoFixAvailable: '可自动修复',
+                issueDetails: '问题详情',
+                severity: '严重程度',
+                location: '位置',
+                message: '消息',
+                suggestion: '建议',
+                codeContext: '代码上下文',
+                suggestedFix: '建议修复',
+                noIssues: '未检测到内存泄漏问题！',
+                enterCode: '输入Swift或Objective-C代码，点击"分析代码"检测内存泄漏',
+                appliedFixes: '已应用 {0} 个修复。请重新分析以验证。',
+                installCli: '安装CLI',
+                samples: {
+                    closure: '闭包捕获问题',
+                    delegate: '非弱引用代理',
+                    timer: '定时器循环引用',
+                    notification: '通知观察者',
+                    swiftui: 'SwiftUI ViewModel',
+                    objcBlock: 'ObjC Block问题',
+                    complex: '复杂示例'
+                },
+                patterns: {
+                    closure_self_capture: {
+                        type: '闭包self捕获',
+                        message: "闭包在没有[weak self]或[unowned self]的情况下捕获了'self'",
+                        suggestion: "在捕获列表中添加[weak self]，并使用'self?'或guard"
+                    },
+                    non_weak_delegate: {
+                        type: '非弱引用代理',
+                        message: "代理属性应该声明为'weak'以避免循环引用",
+                        suggestion: "将'var delegate'改为'weak var delegate'"
+                    },
+                    strong_iboutlet: {
+                        type: '强引用IBOutlet',
+                        message: "IBOutlet应该声明为'weak'以防止与视图层级的循环引用",
+                        suggestion: "将'@IBOutlet var'改为'@IBOutlet weak var'"
+                    },
+                    timer_creation: {
+                        type: '定时器循环引用',
+                        message: "Timer强引用其target，导致循环引用",
+                        suggestion: "使用基于block的Timer API或在deinit中invalidate"
+                    },
+                    notification_observer: {
+                        type: '通知观察者',
+                        message: "NotificationCenter观察者如果不移除可能导致循环引用",
+                        suggestion: "在deinit中移除观察者或使用带[weak self]的block API"
+                    },
+                    dispatch_async_self: {
+                        type: 'Dispatch Async捕获',
+                        message: "Dispatch block强捕获了self",
+                        suggestion: "添加[weak self]以防止潜在的循环引用"
+                    },
+                    escaping_closure: {
+                        type: '逃逸闭包捕获',
+                        message: "逃逸闭包强捕获了self",
+                        suggestion: "在捕获列表中使用[weak self]或[unowned self]"
+                    },
+                    combine_sink_no_store: {
+                        type: 'Combine Sink未存储',
+                        message: "Combine sink cancellable未存储 - 订阅将立即取消",
+                        suggestion: "存储cancellable: .store(in: &cancellables)"
+                    },
+                    viewmodel_closure_self: {
+                        type: 'ViewModel闭包self捕获',
+                        message: "ViewModel闭包强捕获了self",
+                        suggestion: "在ViewModel的闭包中使用[weak self]"
+                    },
+                    network_in_body: {
+                        type: 'View Body中的网络调用',
+                        message: "SwiftUI View body中的网络调用将在每次渲染时执行",
+                        suggestion: "将网络调用移至onAppear或ViewModel"
+                    },
+                    timer_in_body: {
+                        type: 'View Body中的定时器',
+                        message: "在View body中创建的Timer可能导致内存问题",
+                        suggestion: "在onAppear中创建Timer，在onDisappear中invalidate"
+                    },
+                    block_self_capture: {
+                        type: 'Block self捕获',
+                        message: "Block在没有__weak的情况下强捕获了'self'",
+                        suggestion: "在block前添加'__weak typeof(self) weakSelf = self;'"
+                    },
+                    non_weak_delegate_objc: {
+                        type: '非弱引用代理(ObjC)',
+                        message: "代理属性使用了strong/retain而不是weak",
+                        suggestion: "将属性中的'strong'改为'weak'"
+                    },
+                    nstimer_creation: {
+                        type: 'NSTimer循环引用',
+                        message: "NSTimer强引用其target",
+                        suggestion: "在dealloc中invalidate timer或使用代理模式"
+                    },
+                    strong_iboutlet_objc: {
+                        type: '强引用IBOutlet(ObjC)',
+                        message: "IBOutlet应该使用weak而不是strong",
+                        suggestion: "将IBOutlet的'strong'改为'weak'"
+                    },
+                    dispatch_async_objc: {
+                        type: 'Dispatch Async Block捕获',
+                        message: "Dispatch block强捕获了self",
+                        suggestion: "在block前使用__weak引用"
+                    }
+                }
+            }
+        };
+
+        function getText(key) {
+            const keys = key.split('.');
+            let value = i18n[currentLang];
+            for (const k of keys) {
+                value = value?.[k];
+            }
+            return value || i18n['en'][key] || key;
+        }
+
+        function getPatternText(patternName, field) {
+            const pattern = i18n[currentLang]?.patterns?.[patternName];
+            if (pattern && pattern[field]) {
+                return pattern[field];
+            }
+            return i18n['en']?.patterns?.[patternName]?.[field] || '';
+        }
+
+        function setLanguage(lang) {
+            currentLang = lang;
+            localStorage.setItem('ios-leak-detector-lang', lang);
+
+            // Update language buttons
+            document.querySelectorAll('.lang-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.lang === lang);
+            });
+
+            // Update UI texts
+            updateUITexts();
+        }
+
+        function updateUITexts() {
+            const t = i18n[currentLang];
+
+            // Header
+            document.querySelector('.logo h1').textContent = t.title;
+            document.querySelector('.logo span').textContent = t.subtitle;
+            document.getElementById('link-install').textContent = t.installCli;
+
+            // Editor section
+            document.querySelector('.section-title').innerHTML = `<span>📝</span> ${t.codeEditor}`;
+            document.getElementById('analyze-btn').innerHTML = `<span>🔍</span> ${t.analyzeBtn}`;
+            document.querySelector('#analyze-loading span').textContent = t.analyzing;
+            document.getElementById('clear-btn').textContent = t.clear;
+            document.getElementById('apply-fixes-btn').innerHTML = `<span>🔧</span> ${t.applyFixes}`;
+
+            // Sample select
+            const sampleSelect = document.getElementById('sample-select');
+            sampleSelect.options[0].textContent = t.loadSample;
+            sampleSelect.options[1].textContent = t.samples.closure;
+            sampleSelect.options[2].textContent = t.samples.delegate;
+            sampleSelect.options[3].textContent = t.samples.timer;
+            sampleSelect.options[4].textContent = t.samples.notification;
+            sampleSelect.options[5].textContent = t.samples.swiftui;
+            sampleSelect.options[6].textContent = t.samples.objcBlock;
+            sampleSelect.options[7].textContent = t.samples.complex;
+
+            // Results section
+            document.querySelectorAll('.section-title')[1].innerHTML = `<span>📊</span> ${t.results}`;
+            document.querySelectorAll('.stat-label')[0].textContent = t.critical;
+            document.querySelectorAll('.stat-label')[1].textContent = t.high;
+            document.querySelectorAll('.stat-label')[2].textContent = t.medium;
+            document.querySelectorAll('.stat-label')[3].textContent = t.fixable;
+
+            // Update empty state if shown
+            const emptyState = document.querySelector('.empty-state p');
+            if (emptyState) {
+                emptyState.textContent = t.enterCode;
+            }
+        }
+
         // iOS Memory Leak Detection Patterns
         const PATTERNS = {
             swift: [
@@ -1058,6 +1648,7 @@ protocol ViewControllerDelegate: AnyObject {
                         }));
 
                     issues.push({
+                        patternName: pattern.name,
                         type: pattern.type,
                         severity: pattern.severity,
                         message: pattern.message,
@@ -1102,16 +1693,17 @@ protocol ViewControllerDelegate: AnyObject {
                 return;
             }
 
+            const t = i18n[currentLang];
             issuesList.innerHTML = issues.map((issue, index) => `
                 <div class="issue-item" data-index="${index}">
                     <div class="issue-header">
-                        <span class="issue-type">${issue.type}</span>
-                        <span class="severity-badge severity-${issue.severity}">${issue.severity}</span>
+                        <span class="issue-type">${getPatternText(issue.patternName, 'type') || issue.type}</span>
+                        <span class="severity-badge severity-${issue.severity}">${t[issue.severity] || issue.severity}</span>
                     </div>
-                    <div class="issue-location">Line ${issue.line}, Column ${issue.column}</div>
+                    <div class="issue-location">${t.line} ${issue.line}, ${t.column} ${issue.column}</div>
                     <div class="issue-message">
-                        ${issue.message}
-                        ${issue.fixable ? '<span class="fix-badge">🔧 Auto-fix available</span>' : ''}
+                        ${getPatternText(issue.patternName, 'message') || issue.message}
+                        ${issue.fixable ? `<span class="fix-badge">🔧 ${t.autoFixAvailable}</span>` : ''}
                     </div>
                 </div>
             `).join('');
@@ -1132,8 +1724,9 @@ protocol ViewControllerDelegate: AnyObject {
             const modal = document.getElementById('fix-modal');
             const title = document.getElementById('modal-title');
             const body = document.getElementById('modal-body');
+            const t = i18n[currentLang];
 
-            title.textContent = issue.type;
+            title.textContent = getPatternText(issue.patternName, 'type') || issue.type;
 
             let contextHtml = issue.context.map(line =>
                 `<div class="${line.highlight ? 'line-highlight' : ''}" style="${line.highlight ? 'background: rgba(210, 153, 34, 0.2);' : ''}">
@@ -1145,21 +1738,24 @@ protocol ViewControllerDelegate: AnyObject {
             if (issue.fix) {
                 fixHtml = `
                     <div class="fix-preview">
-                        <div class="fix-preview-header">🔧 Suggested Fix</div>
+                        <div class="fix-preview-header">🔧 ${t.suggestedFix}</div>
                         <pre><div class="line-removed">- ${escapeHtml(issue.fix.before)}</div><div class="line-added">+ ${escapeHtml(issue.fix.after)}</div></pre>
                     </div>
                 `;
             }
 
+            const translatedMessage = getPatternText(issue.patternName, 'message') || issue.message;
+            const translatedSuggestion = getPatternText(issue.patternName, 'suggestion') || issue.suggestion;
+
             body.innerHTML = `
-                <p><strong>Severity:</strong> <span class="severity-badge severity-${issue.severity}">${issue.severity}</span></p>
-                <p><strong>Location:</strong> Line ${issue.line}, Column ${issue.column}</p>
-                <p style="margin-top: 1rem;"><strong>Message:</strong></p>
-                <p style="color: var(--text-secondary);">${issue.message}</p>
-                <p style="margin-top: 1rem;"><strong>Suggestion:</strong></p>
-                <p style="color: var(--accent-green);">${issue.suggestion}</p>
+                <p><strong>${t.severity}:</strong> <span class="severity-badge severity-${issue.severity}">${t[issue.severity] || issue.severity}</span></p>
+                <p><strong>${t.location}:</strong> ${t.line} ${issue.line}, ${t.column} ${issue.column}</p>
+                <p style="margin-top: 1rem;"><strong>${t.message}:</strong></p>
+                <p style="color: var(--text-secondary);">${translatedMessage}</p>
+                <p style="margin-top: 1rem;"><strong>${t.suggestion}:</strong></p>
+                <p style="color: var(--accent-green);">${translatedSuggestion}</p>
                 <div style="margin-top: 1rem;">
-                    <strong>Code Context:</strong>
+                    <strong>${t.codeContext}:</strong>
                     <div class="fix-preview" style="margin-top: 0.5rem;">
                         <pre style="font-size: 0.8rem;">${contextHtml}</pre>
                     </div>
@@ -1243,6 +1839,14 @@ protocol ViewControllerDelegate: AnyObject {
         document.addEventListener('keydown', (e) => {
             if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
                 analyzeCode();
+            }
+        });
+
+        // Initialize language on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            const savedLang = localStorage.getItem('ios-leak-detector-lang');
+            if (savedLang && i18n[savedLang]) {
+                setLanguage(savedLang);
             }
         });
     </script>
