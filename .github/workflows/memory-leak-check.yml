@@ -1,0 +1,59 @@
+# Memory Leak Check Workflow for ios-memory-leak-detector repo
+# This runs on the example files to test the tool
+
+name: Memory Leak Check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  analyze:
+    name: Analyze for Memory Leaks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -e .
+
+      - name: Run memory leak analysis
+        run: |
+          echo "=== Analyzing example files ==="
+          ios-leak-detector examples/ --verbose
+
+      - name: Generate HTML report
+        run: |
+          ios-leak-detector examples/ --format html --output leak-report.html
+
+      - name: Upload report
+        uses: actions/upload-artifact@v3
+        with:
+          name: memory-leak-report
+          path: leak-report.html
+
+  test-action:
+    name: Test GitHub Action
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run iOS Leak Detector Action
+        uses: ./
+        with:
+          path: examples/
+          severity: info
+          fail-on-high: 'false'
+          format: console

@@ -1,0 +1,101 @@
+# Example workflow for your iOS project
+# Copy this file to your project's .github/workflows/ directory
+# Rename it to something like 'memory-leak-check.yml'
+
+name: iOS Memory Leak Check
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  memory-leak-check:
+    name: Check for Memory Leaks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run iOS Memory Leak Detector
+        uses: yoon-k/ios-memory-leak-detector@main
+        with:
+          # Path to your iOS project (default: current directory)
+          path: '.'
+
+          # Minimum severity to report: critical, high, medium, low, info
+          severity: 'medium'
+
+          # Fail the workflow if high/critical issues are found
+          fail-on-high: 'true'
+
+          # Directories to exclude (space-separated)
+          exclude: 'Pods Carthage .build DerivedData Vendor'
+
+          # Output format: console, json, html, markdown
+          format: 'html'
+
+          # Path to save the report
+          output-file: 'memory-leak-report.html'
+
+          # Include SwiftUI-specific patterns
+          include-swiftui: 'true'
+
+      - name: Upload Report
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: memory-leak-report
+          path: memory-leak-report.html
+
+  # Optional: Post comment on PR with results
+  comment-pr:
+    name: Comment on PR
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    needs: memory-leak-check
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install ios-leak-detector
+        run: pip install ios-leak-detector
+
+      - name: Generate markdown report
+        id: report
+        run: |
+          # Generate report
+          ios-leak-detector . --severity medium --format markdown --output report.md || true
+
+          # Read report
+          if [ -f report.md ]; then
+            REPORT=$(cat report.md)
+          else
+            REPORT="No issues found"
+          fi
+
+          # Escape for GitHub Actions
+          REPORT="${REPORT//'%'/'%25'}"
+          REPORT="${REPORT//$'\n'/'%0A'}"
+          REPORT="${REPORT//$'\r'/'%0D'}"
+
+          echo "report=$REPORT" >> $GITHUB_OUTPUT
+
+      - name: Comment on PR
+        uses: actions/github-script@v6
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '## iOS Memory Leak Analysis\n\n${{ steps.report.outputs.report }}'
+            })

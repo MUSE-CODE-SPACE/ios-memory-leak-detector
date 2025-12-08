@@ -369,7 +369,9 @@ Other:
 
 ## CI/CD Integration
 
-### GitHub Actions
+### GitHub Action (Recommended)
+
+Use the official action for easy integration:
 
 ```yaml
 name: iOS Memory Leak Check
@@ -378,9 +380,59 @@ on: [push, pull_request]
 
 jobs:
   leak-check:
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+
+      - name: Run Memory Leak Detector
+        uses: yoon-k/ios-memory-leak-detector@main
+        with:
+          path: '.'
+          severity: 'medium'
+          fail-on-high: 'true'
+          format: 'html'
+          output-file: 'leak-report.html'
+
+      - name: Upload report
+        uses: actions/upload-artifact@v3
+        with:
+          name: leak-report
+          path: leak-report.html
+```
+
+#### Action Inputs
+
+| Input | Description | Default |
+|-------|-------------|---------|
+| `path` | Path to iOS project | `.` |
+| `severity` | Minimum severity | `info` |
+| `fail-on-high` | Fail if high/critical issues found | `true` |
+| `exclude` | Directories to exclude | `Pods Carthage .build DerivedData` |
+| `format` | Output format | `console` |
+| `output-file` | Path for report | - |
+| `include-swiftui` | Include SwiftUI patterns | `true` |
+
+#### Action Outputs
+
+| Output | Description |
+|--------|-------------|
+| `total-issues` | Total number of issues |
+| `critical-count` | Critical issues count |
+| `high-count` | High severity count |
+| `fixable-count` | Auto-fixable issues count |
+
+### Manual Setup
+
+```yaml
+name: iOS Memory Leak Check
+
+on: [push, pull_request]
+
+jobs:
+  leak-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v4

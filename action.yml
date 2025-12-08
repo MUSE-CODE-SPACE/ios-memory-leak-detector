@@ -1,0 +1,134 @@
+name: 'iOS Memory Leak Detector'
+description: 'Detect memory leaks and retain cycles in iOS projects (Swift, SwiftUI, Objective-C)'
+author: 'yoon-k'
+branding:
+  icon: 'search'
+  color: 'orange'
+
+inputs:
+  path:
+    description: 'Path to iOS project (default: current directory)'
+    required: false
+    default: '.'
+  severity:
+    description: 'Minimum severity level to report (critical, high, medium, low, info)'
+    required: false
+    default: 'info'
+  fail-on-high:
+    description: 'Fail the action if high/critical issues are found'
+    required: false
+    default: 'true'
+  exclude:
+    description: 'Directories to exclude (space-separated)'
+    required: false
+    default: 'Pods Carthage .build DerivedData'
+  format:
+    description: 'Output format (console, json, html, markdown)'
+    required: false
+    default: 'console'
+  output-file:
+    description: 'Path to save the report'
+    required: false
+    default: ''
+  include-swiftui:
+    description: 'Include SwiftUI-specific pattern detection'
+    required: false
+    default: 'true'
+  use-ast:
+    description: 'Use AST-based parsing for higher accuracy'
+    required: false
+    default: 'true'
+
+outputs:
+  total-issues:
+    description: 'Total number of issues found'
+    value: ${{ steps.analyze.outputs.total_issues }}
+  critical-count:
+    description: 'Number of critical issues'
+    value: ${{ steps.analyze.outputs.critical_count }}
+  high-count:
+    description: 'Number of high severity issues'
+    value: ${{ steps.analyze.outputs.high_count }}
+  fixable-count:
+    description: 'Number of auto-fixable issues'
+    value: ${{ steps.analyze.outputs.fixable_count }}
+  report-path:
+    description: 'Path to the generated report'
+    value: ${{ steps.analyze.outputs.report_path }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install ios-leak-detector
+      shell: bash
+      run: |
+        pip install ios-leak-detector || pip install git+https://github.com/yoon-k/ios-memory-leak-detector.git
+
+    - name: Run analysis
+      id: analyze
+      shell: bash
+      run: |
+        # Build command
+        CMD="ios-leak-detector ${{ inputs.path }}"
+        CMD="$CMD --severity ${{ inputs.severity }}"
+
+        # Add exclude directories
+        if [ -n "${{ inputs.exclude }}" ]; then
+          CMD="$CMD --exclude ${{ inputs.exclude }}"
+        fi
+
+        # Add format and output
+        if [ -n "${{ inputs.output-file }}" ]; then
+          CMD="$CMD --format ${{ inputs.format }} --output ${{ inputs.output-file }}"
+          echo "report_path=${{ inputs.output-file }}" >> $GITHUB_OUTPUT
+        else
+          CMD="$CMD --format ${{ inputs.format }}"
+        fi
+
+        # SwiftUI detection
+        if [ "${{ inputs.include-swiftui }}" != "true" ]; then
+          CMD="$CMD --no-swiftui"
+        fi
+
+        # Run analysis and capture output
+        echo "Running: $CMD"
+        echo ""
+
+        # Run and capture exit code
+        set +e
+        OUTPUT=$($CMD 2>&1)
+        EXIT_CODE=$?
+        set -e
+
+        echo "$OUTPUT"
+
+        # Parse counts from output (simplified)
+        TOTAL=$(echo "$OUTPUT" | grep -o "Total issues: [0-9]*" | grep -o "[0-9]*" || echo "0")
+        CRITICAL=$(echo "$OUTPUT" | grep -o "Critical: [0-9]*" | grep -o "[0-9]*" || echo "0")
+        HIGH=$(echo "$OUTPUT" | grep -o "HIGH: [0-9]*" | grep -o "[0-9]*" || echo "0")
+        FIXABLE=$(echo "$OUTPUT" | grep -o "Auto-fixable: [0-9]*" | grep -o "[0-9]*" || echo "0")
+
+        echo "total_issues=$TOTAL" >> $GITHUB_OUTPUT
+        echo "critical_count=$CRITICAL" >> $GITHUB_OUTPUT
+        echo "high_count=$HIGH" >> $GITHUB_OUTPUT
+        echo "fixable_count=$FIXABLE" >> $GITHUB_OUTPUT
+
+        # Exit with code based on issues found
+        if [ "${{ inputs.fail-on-high }}" = "true" ]; then
+          if [ "$EXIT_CODE" -gt 0 ]; then
+            echo "::error::Memory leak issues found!"
+            exit $EXIT_CODE
+          fi
+        fi
+
+    - name: Upload report artifact
+      if: inputs.output-file != ''
+      uses: actions/upload-artifact@v3
+      with:
+        name: leak-detector-report
+        path: ${{ inputs.output-file }}
