@@ -77,6 +77,28 @@ cd ios-memory-leak-detector
 pip install -e .
 ```
 
+## Web UI (New!)
+
+A beautiful web interface is available for browser-based analysis:
+
+```bash
+# Start the web UI
+./run_web.sh
+
+# Or with Python directly
+python web_app.py
+
+# Custom port
+python web_app.py --port 8080
+```
+
+The web UI automatically opens at `http://localhost:5050` with features:
+- Visual project analysis with severity filtering
+- Real-time issue display with code snippets
+- One-click fix preview and apply
+- Export reports in HTML/JSON/Markdown formats
+- All detection patterns in one view
+
 ## Quick Start
 
 ### Basic Analysis
