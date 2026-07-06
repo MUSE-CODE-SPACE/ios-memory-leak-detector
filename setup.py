@@ -11,13 +11,13 @@ long_description = readme_path.read_text(encoding="utf-8") if readme_path.exists
 
 setup(
     name="ios-leak-detector",
-    version="1.0.0",
+    version="2.1.0",
     author="yoon-k",
     author_email="yoon-k@github.com",
     description="Static analysis tool to detect memory leaks and performance issues in iOS projects (Swift, SwiftUI, Objective-C)",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yoon-k/ios-memory-leak-detector",
+    url="https://github.com/MUSE-CODE-SPACE/ios-memory-leak-detector",
     packages=find_packages(),
     classifiers=[
         "Development Status :: 4 - Beta",
@@ -62,7 +62,7 @@ setup(
         "xcode",
     ],
     project_urls={
-        "Bug Reports": "https://github.com/yoon-k/ios-memory-leak-detector/issues",
-        "Source": "https://github.com/yoon-k/ios-memory-leak-detector",
+        "Bug Reports": "https://github.com/MUSE-CODE-SPACE/ios-memory-leak-detector/issues",
+        "Source": "https://github.com/MUSE-CODE-SPACE/ios-memory-leak-detector",
     },
 )

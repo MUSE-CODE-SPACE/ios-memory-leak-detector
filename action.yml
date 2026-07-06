@@ -67,7 +67,7 @@ runs:
     - name: Install ios-leak-detector
       shell: bash
       run: |
-        pip install ios-leak-detector || pip install git+https://github.com/yoon-k/ios-memory-leak-detector.git
+        pip install git+https://github.com/MUSE-CODE-SPACE/ios-memory-leak-detector.git
 
     - name: Run analysis
       id: analyze

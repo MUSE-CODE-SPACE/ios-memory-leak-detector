@@ -3,7 +3,7 @@
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://python.org)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)]()
-[![Version](https://img.shields.io/badge/Version-2.0.0-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-2.1.0-orange.svg)]()
 
 A powerful static analysis tool to detect memory leaks, retain cycles, and performance issues in iOS projects. Supports **Swift**, **SwiftUI**, and **Objective-C**.
 
@@ -63,18 +63,18 @@ A powerful static analysis tool to detect memory leaks, retain cycles, and perfo
 
 ## Installation
 
-### Using pip
+### From source (recommended — not yet published to PyPI)
 
 ```bash
-pip install ios-leak-detector
-```
-
-### From source
-
-```bash
-git clone https://github.com/yoon-k/ios-memory-leak-detector.git
+git clone https://github.com/MUSE-CODE-SPACE/ios-memory-leak-detector.git
 cd ios-memory-leak-detector
 pip install -e .
+```
+
+### Directly with pip
+
+```bash
+pip install git+https://github.com/MUSE-CODE-SPACE/ios-memory-leak-detector.git
 ```
 
 ## Web UI (New!)
@@ -385,7 +385,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Run Memory Leak Detector
-        uses: yoon-k/ios-memory-leak-detector@main
+        uses: MUSE-CODE-SPACE/ios-memory-leak-detector@main
         with:
           path: '.'
           severity: 'medium'
@@ -485,7 +485,7 @@ repos:
 Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) for details.
 
 ```bash
-git clone https://github.com/yoon-k/ios-memory-leak-detector.git
+git clone https://github.com/MUSE-CODE-SPACE/ios-memory-leak-detector.git
 cd ios-memory-leak-detector
 pip install -e ".[dev]"
 pytest
@@ -501,4 +501,4 @@ Created by [yoon-k](https://github.com/yoon-k)
 
 ---
 
-**Found a bug or have a feature request?** [Open an issue](https://github.com/yoon-k/ios-memory-leak-detector/issues)
+**Found a bug or have a feature request?** [Open an issue](https://github.com/MUSE-CODE-SPACE/ios-memory-leak-detector/issues)
