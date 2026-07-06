@@ -41,7 +41,6 @@ class FileFix:
             fixed_lines,
             fromfile=f'a/{Path(self.file_path).name}',
             tofile=f'b/{Path(self.file_path).name}',
-            lineterm=''
         )
         return ''.join(diff)
 
@@ -419,9 +418,10 @@ class SwiftFixer:
         if last_brace == -1:
             return class_code
 
+        default_cleanup = 'print("\\(type(of: self)) deallocated")'
         deinit_code = f'''
     deinit {{
-        {cleanup_code if cleanup_code else 'print("\\(type(of: self)) deallocated")'}
+        {cleanup_code if cleanup_code else default_cleanup}
     }}
 '''
         return class_code[:last_brace] + deinit_code + class_code[last_brace:]
