@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ios-leak-detector"
+version = "2.1.0"
+description = "Static analysis tool to detect memory leaks and performance issues in iOS projects (Swift, SwiftUI, Objective-C)"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+authors = [{ name = "yoon-k" }]
+keywords = ["ios", "swift", "swiftui", "objective-c", "memory-leak", "static-analysis", "code-quality", "xcode"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Software Development :: Testing",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: OS Independent",
+    "Environment :: Console",
+]
+dependencies = []
+
+[project.optional-dependencies]
+web = ["flask>=3.0"]
+dev = ["pytest>=8.3", "flask>=3.0"]
+
+[project.urls]
+Homepage = "https://github.com/MUSE-CODE-SPACE/ios-memory-leak-detector"
+Source = "https://github.com/MUSE-CODE-SPACE/ios-memory-leak-detector"
+"Bug Reports" = "https://github.com/MUSE-CODE-SPACE/ios-memory-leak-detector/issues"
+
+[project.scripts]
+ios-leak-detector = "ios_leak_detector.cli:main"
+iosleaks = "ios_leak_detector.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["ios_leak_detector*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

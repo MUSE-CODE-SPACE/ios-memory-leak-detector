@@ -1,6 +1,6 @@
 # iOS Memory Leak Detector 🔍
 
-[![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://python.org)
+[![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)](https://python.org)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)]()
 [![Version](https://img.shields.io/badge/Version-2.1.0-orange.svg)]()
@@ -382,7 +382,7 @@ jobs:
   leak-check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Run Memory Leak Detector
         uses: MUSE-CODE-SPACE/ios-memory-leak-detector@main
@@ -432,10 +432,10 @@ jobs:
   leak-check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
 
@@ -482,7 +482,7 @@ repos:
 
 ## Contributing
 
-Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) for details.
+Contributions are welcome — open an issue or a pull request.
 
 ```bash
 git clone https://github.com/MUSE-CODE-SPACE/ios-memory-leak-detector.git
